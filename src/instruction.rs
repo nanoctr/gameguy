@@ -140,13 +140,16 @@ impl Instruction {
 
         Ok(match self {
             NOP | STOP | HALT => 1,
-            LD_long(_, LongSource::Number(_)) => 3,
-            LD_long(_, LongSource::SP) => 3,
+            LD_long(_, _) => 3,
             LD_sp_hl => 1,
             LD_hl_sp_n(_) => 2,
+
+            LD(Destination::MemoryAtRegister(_), Source::Register(_)) => 1,
+            LD(Destination::Register(_), Source::Number(_)) => 2,
+            LD(Destination::MemoryAtRegister(_), Source::Number(_)) => 2,
+            LD(Destination::Register(_), Source::MemoryAtRegister(_)) => 1,
+
             LD(Destination::Memory(_), Source::Number(_)) => 3,
-            LD(Destination::MemoryAtRegister(_), Source::Number(_)) => 3,
-            LD(_, Source::Number(_)) => 2,
             LD(_, Source::Register(_)) => 1,
             LD_a_mem(_) => 3,
             LD_high(_, _) => 2,
@@ -178,7 +181,7 @@ impl Instruction {
             BIT(_, _) | RES(_, _) | SET(_, _) => 1,
 
             EI | DI => 1,
-            // TODO: This feels icky :/
+            // TODO:
             _ => todo!(),
         })
     }

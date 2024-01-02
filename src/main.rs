@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 mod cpu;
+mod instruction;
 mod mmu;
-mod opcode;
 mod registers;
 mod util;
 

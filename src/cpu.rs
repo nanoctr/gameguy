@@ -1,6 +1,5 @@
 use crate::{
-    mmu::Mmu,
-    opcode::{
+    instruction::{
         BitOperand, Condition, Destination, IncdecDestination, IncdecLongDestination, IncrementOp,
         Instruction, LoadHighOperand, LongDestination, LongSource, Source,
     },
