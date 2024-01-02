@@ -290,8 +290,8 @@ impl Cpu {
         match dest {
             Destination::Register(reg) => self.reg.write(reg, val),
             Destination::Memory(addr) => self.mem.write(addr, val),
-            Destination::MemoryAtHL => {
-                let addr = self.reg.read_long(LongRegister::HL);
+            Destination::MemoryAtRegister(reg) => {
+                let addr = self.reg.read_long(reg);
                 self.mem.write(addr, val);
             }
         }
@@ -603,7 +603,7 @@ impl Cpu {
         match source {
             Source::Register(reg) => self.reg.read(reg),
             Source::Number(x) => x,
-            Source::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
+            Source::MemoryAtRegister(reg) => self.mem.read(self.reg.read_long(reg)),
         }
     }
 
@@ -651,12 +651,12 @@ impl Cpu {
             0x02 => LD(Destination::MemoryAtRegister(BC), Source::Register(A)),
             0x12 => LD(Destination::MemoryAtRegister(DE), Source::Register(A)),
             0x22 => LD_incdec(
-                Destination::MemoryAtHL,
+                Destination::MemoryAtRegister(LongRegister::HL),
                 Source::Register(A),
                 IncrementOp::Inc,
             ),
             0x32 => LD_incdec(
-                Destination::MemoryAtHL,
+                Destination::MemoryAtRegister(LongRegister::HL),
                 Source::Register(A),
                 IncrementOp::Dec,
             ),
@@ -673,19 +673,25 @@ impl Cpu {
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
             0x36 => LD(
-                Destination::MemoryAtHL,
+                Destination::MemoryAtRegister(LongRegister::HL),
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
-            0x0A => LD_mem(Destination::Register(A), LongRegister::BC),
-            0x1A => LD_mem(Destination::Register(A), LongRegister::DE),
+            0x0A => LD(
+                Destination::Register(A),
+                Source::MemoryAtRegister(LongRegister::BC),
+            ),
+            0x1A => LD(
+                Destination::Register(A),
+                Source::MemoryAtRegister(LongRegister::DE),
+            ),
             0x2A => LD_incdec(
                 Destination::Register(A),
-                Source::MemoryAtHL,
+                Source::MemoryAtRegister(LongRegister::HL),
                 IncrementOp::Inc,
             ),
             0x3A => LD_incdec(
                 Destination::Register(A),
-                Source::MemoryAtHL,
+                Source::MemoryAtRegister(LongRegister::HL),
                 IncrementOp::Dec,
             ),
             0x0E => LD(
@@ -705,24 +711,66 @@ impl Cpu {
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
 
-            0x46 => LD(Destination::Register(B), Source::MemoryAtHL),
-            0x4E => LD(Destination::Register(C), Source::MemoryAtHL),
+            0x46 => LD(
+                Destination::Register(B),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
+            0x4E => LD(
+                Destination::Register(C),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
 
-            0x56 => LD(Destination::Register(D), Source::MemoryAtHL),
-            0x5E => LD(Destination::Register(E), Source::MemoryAtHL),
+            0x56 => LD(
+                Destination::Register(D),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
+            0x5E => LD(
+                Destination::Register(E),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
 
-            0x66 => LD(Destination::Register(H), Source::MemoryAtHL),
-            0x6E => LD(Destination::Register(L), Source::MemoryAtHL),
+            0x66 => LD(
+                Destination::Register(H),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
+            0x6E => LD(
+                Destination::Register(L),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
 
-            0x7E => LD(Destination::Register(A), Source::MemoryAtHL),
+            0x7E => LD(
+                Destination::Register(A),
+                Source::MemoryAtRegister(LongRegister::HL),
+            ),
 
-            0x70 => LD(Destination::MemoryAtHL, Source::Register(B)),
-            0x71 => LD(Destination::MemoryAtHL, Source::Register(C)),
-            0x72 => LD(Destination::MemoryAtHL, Source::Register(D)),
-            0x73 => LD(Destination::MemoryAtHL, Source::Register(E)),
-            0x74 => LD(Destination::MemoryAtHL, Source::Register(H)),
-            0x75 => LD(Destination::MemoryAtHL, Source::Register(L)),
-            0x77 => LD(Destination::MemoryAtHL, Source::Register(A)),
+            0x70 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(B),
+            ),
+            0x71 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(C),
+            ),
+            0x72 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(D),
+            ),
+            0x73 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(E),
+            ),
+            0x74 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(H),
+            ),
+            0x75 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(L),
+            ),
+            0x77 => LD(
+                Destination::MemoryAtRegister(LongRegister::HL),
+                Source::Register(A),
+            ),
 
             0xEA => LD(
                 Destination::Memory(self.mem.read_u16(self.pc + 1)),
@@ -994,7 +1042,7 @@ impl Cpu {
 
 // TODO: Naming, this is also used for bit operations where it's not the -second- param necessarily
 // TODO: Don't return a Source here; instead return a narrower type that is only
-// Register|MemoryAtHL and impement from::From<NarrowerType> for Source
+// Register|MemoryAtRegister(LongRegister::HL) and impement from::From<NarrowerType> for Source
 // After this is done, get_bit_param can be merged with this function.
 fn get_arithmetic_second_param(opcode: u8) -> Source {
     use Register::*;
@@ -1006,7 +1054,7 @@ fn get_arithmetic_second_param(opcode: u8) -> Source {
         3 => Source::Register(E),
         4 => Source::Register(H),
         5 => Source::Register(L),
-        6 => Source::MemoryAtHL,
+        6 => Source::MemoryAtRegister(LongRegister::HL),
         7 => Source::Register(A),
         x => panic!("This should never happen: we're looking at the second nibble only with modulo 8, value was: 0x{x:X}")
     }

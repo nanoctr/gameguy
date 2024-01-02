@@ -4,14 +4,14 @@ use crate::registers::{LongRegister, Register};
 pub enum Source {
     Register(Register),
     Number(u8),
-    MemoryAtHL,
+    MemoryAtRegister(LongRegister),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Destination {
     Register(Register),
     Memory(u16),
-    MemoryAtHL,
+    MemoryAtRegister(LongRegister),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -67,7 +67,6 @@ pub enum Instruction {
     STOP,
     HALT,
     LD(Destination, Source),
-    LD_mem(Destination, LongRegister),
     LD_long(LongDestination, LongSource),
     LD_incdec(Destination, Source, IncrementOp),
     INCDEC(IncdecDestination, IncrementOp),
@@ -146,7 +145,7 @@ impl Instruction {
             LD_sp_hl => 1,
             LD_hl_sp_n(_) => 2,
             LD(Destination::Memory(_), Source::Number(_)) => 3,
-            LD(Destination::MemoryAtHL, Source::Number(_)) => 3,
+            LD(Destination::MemoryAtRegister(_), Source::Number(_)) => 3,
             LD(_, Source::Number(_)) => 2,
             LD(_, Source::Register(_)) => 1,
             LD_a_mem(_) => 3,
@@ -180,6 +179,7 @@ impl Instruction {
 
             EI | DI => 1,
             // TODO: This feels icky :/
+            _ => todo!(),
         })
     }
 
@@ -192,9 +192,9 @@ impl Instruction {
             LD_long(LongDestination::Memory(_), LongSource::SP) => 20,
             LD_sp_hl => 8,
             LD_hl_sp_n(_) => 12,
-            LD(Destination::MemoryAtHL, Source::Register(_)) => 8,
+            LD(Destination::MemoryAtRegister(_), Source::Register(_)) => 8,
             LD(Destination::Register(_), Source::Number(_)) => 8,
-            LD(Destination::Register(_), Source::MemoryAtHL) => 8,
+            LD(Destination::Register(_), Source::MemoryAtRegister(_)) => 8,
             LD(Destination::Register(_), Source::Register(_)) => 4,
             LD(Destination::Memory(_), Source::Register(_)) => 16,
             LD_a_mem(_) => 16,
@@ -207,21 +207,21 @@ impl Instruction {
             INCDEC_long(IncdecLongDestination::Register(_), _) => 4,
             INCDEC_long(IncdecLongDestination::SP, _) => 12,
 
-            ADD(Source::MemoryAtHL) => 8,
+            ADD(Source::MemoryAtRegister(_)) => 8,
             ADD(Source::Register(_)) => 4,
-            ADC(Source::MemoryAtHL) => 8,
+            ADC(Source::MemoryAtRegister(_)) => 8,
             ADC(Source::Register(_)) => 4,
-            SUB(Source::MemoryAtHL) => 8,
+            SUB(Source::MemoryAtRegister(_)) => 8,
             SUB(Source::Register(_)) => 4,
-            SBC(Source::MemoryAtHL) => 8,
+            SBC(Source::MemoryAtRegister(_)) => 8,
             SBC(Source::Register(_)) => 4,
-            AND(Source::MemoryAtHL) => 8,
+            AND(Source::MemoryAtRegister(_)) => 8,
             AND(Source::Register(_)) => 4,
-            XOR(Source::MemoryAtHL) => 8,
+            XOR(Source::MemoryAtRegister(_)) => 8,
             XOR(Source::Register(_)) => 4,
-            OR(Source::MemoryAtHL) => 8,
+            OR(Source::MemoryAtRegister(_)) => 8,
             OR(Source::Register(_)) => 4,
-            CP(Source::MemoryAtHL) => 8,
+            CP(Source::MemoryAtRegister(_)) => 8,
             CP(Source::Register(_)) => 4,
 
             ADD_hl(_) | ADD_hl_hl => 8,
