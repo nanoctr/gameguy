@@ -3,6 +3,7 @@ use crate::{
         BitOperand, Condition, Destination, IncdecDestination, IncdecLongDestination, IncrementOp,
         Instruction, LoadHighOperand, LongDestination, LongSource, Source,
     },
+    mmu::Mmu,
     registers::{Flag, LongRegister, Register, Registers},
 };
 
@@ -618,6 +619,12 @@ impl Cpu {
             0x00 => NOP,
             0x10 => STOP,
 
+            0x18 => JR(None, self.mem.read(self.pc + 1) as i8),
+            0x28 => JR(Some(Condition::Zero), self.mem.read(self.pc + 1) as i8),
+            0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc + 1) as i8),
+            0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc + 1) as i8),
+            0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc + 1) as i8),
+
             // Loads: 16 bit
             0x01 => LD_long(
                 LongDestination::Register(BC),
@@ -650,12 +657,12 @@ impl Cpu {
             0x02 => LD(Destination::MemoryAtRegister(BC), Source::Register(A)),
             0x12 => LD(Destination::MemoryAtRegister(DE), Source::Register(A)),
             0x22 => LD_incdec(
-                Destination::MemoryAtRegister(LongRegister::HL),
+                Destination::MemoryAtRegister(HL),
                 Source::Register(A),
                 IncrementOp::Inc,
             ),
             0x32 => LD_incdec(
-                Destination::MemoryAtRegister(LongRegister::HL),
+                Destination::MemoryAtRegister(HL),
                 Source::Register(A),
                 IncrementOp::Dec,
             ),
@@ -672,25 +679,19 @@ impl Cpu {
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
             0x36 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
+                Destination::MemoryAtRegister(HL),
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
-            0x0A => LD(
-                Destination::Register(A),
-                Source::MemoryAtRegister(LongRegister::BC),
-            ),
-            0x1A => LD(
-                Destination::Register(A),
-                Source::MemoryAtRegister(LongRegister::DE),
-            ),
+            0x0A => LD(Destination::Register(A), Source::MemoryAtRegister(BC)),
+            0x1A => LD(Destination::Register(A), Source::MemoryAtRegister(DE)),
             0x2A => LD_incdec(
                 Destination::Register(A),
-                Source::MemoryAtRegister(LongRegister::HL),
+                Source::MemoryAtRegister(HL),
                 IncrementOp::Inc,
             ),
             0x3A => LD_incdec(
                 Destination::Register(A),
-                Source::MemoryAtRegister(LongRegister::HL),
+                Source::MemoryAtRegister(HL),
                 IncrementOp::Dec,
             ),
             0x0E => LD(
@@ -710,70 +711,25 @@ impl Cpu {
                 Source::Number(self.mem.read(self.pc + 1)),
             ),
 
-            0x46 => LD(
-                Destination::Register(B),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
-            0x4E => LD(
-                Destination::Register(C),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
+            0x46 => LD(Destination::Register(B), Source::MemoryAtRegister(HL)),
+            0x4E => LD(Destination::Register(C), Source::MemoryAtRegister(HL)),
 
-            0x56 => LD(
-                Destination::Register(D),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
-            0x5E => LD(
-                Destination::Register(E),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
+            0x56 => LD(Destination::Register(D), Source::MemoryAtRegister(HL)),
+            0x5E => LD(Destination::Register(E), Source::MemoryAtRegister(HL)),
 
-            0x66 => LD(
-                Destination::Register(H),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
-            0x6E => LD(
-                Destination::Register(L),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
+            0x66 => LD(Destination::Register(H), Source::MemoryAtRegister(HL)),
+            0x6E => LD(Destination::Register(L), Source::MemoryAtRegister(HL)),
 
-            0x7E => LD(
-                Destination::Register(A),
-                Source::MemoryAtRegister(LongRegister::HL),
-            ),
+            0x7E => LD(Destination::Register(A), Source::MemoryAtRegister(HL)),
 
-            0x70 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(B),
-            ),
-            0x71 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(C),
-            ),
-            0x72 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(D),
-            ),
-            0x73 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(E),
-            ),
-            0x74 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(H),
-            ),
-            0x75 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(L),
-            ),
-            0x77 => LD(
-                Destination::MemoryAtRegister(LongRegister::HL),
-                Source::Register(A),
+            x if (0x70..0x78).contains(&x) => LD(
+                Destination::MemoryAtRegister(HL),
+                Source::Register(get_second_reg_param(x).unwrap()),
             ),
 
             0xEA => LD(
                 Destination::Memory(self.mem.read_u16(self.pc + 1)),
-                Source::Register(Register::A),
+                Source::Register(A),
             ),
             0xFA => LD_a_mem(self.mem.read_u16(self.pc + 1)),
             0xE0 => LD_high(
@@ -815,9 +771,9 @@ impl Cpu {
             0xFE => CP(Source::Number(self.mem.read(self.pc + 1))),
 
             // ADD 16 bit
-            0x09 => ADD_hl(LongRegister::BC),
-            0x19 => ADD_hl(LongRegister::DE),
-            0x29 => ADD_hl(LongRegister::HL),
+            0x09 => ADD_hl(BC),
+            0x19 => ADD_hl(DE),
+            0x29 => ADD_hl(HL),
             0x39 => ADD_hl_hl,
 
             // INC/DEC: 16 bit
@@ -856,10 +812,10 @@ impl Cpu {
             0x0F => RRCA,
             0x1F => RRA,
 
-            0xC5 => PUSH(LongRegister::BC),
-            0xD5 => PUSH(LongRegister::DE),
-            0xE5 => PUSH(LongRegister::HL),
-            0xF5 => PUSH(LongRegister::AF),
+            0xC5 => PUSH(BC),
+            0xD5 => PUSH(DE),
+            0xE5 => PUSH(HL),
+            0xF5 => PUSH(AF),
 
             // Jumps
             0xC3 => JP(None, self.mem.read_u16(self.pc + 1)),
