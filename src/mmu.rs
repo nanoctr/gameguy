@@ -22,13 +22,13 @@ Memory map (source: Gameboy Development Manual, all numbers in hex format):
 */
 pub struct Mmu {
     pub boot_mode: bool,
-    boot_rom: Box<[u8; 0x4000]>,
+    boot_rom: [u8; 0x4000],
     // TODO: Maybe move tile_ram and background_map into the PPU later on?
-    tile_ram: Box<[u8; 0x1800]>,
-    background_map: Box<[u8; 0x800]>,
-    ram: Box<[u8; 0x2000]>,
-    oam: Box<[u8; 0xA0]>,
-    high_ram: Box<[u8; 0x7F]>,
+    tile_ram: [u8; 0x1800],
+    background_map: [u8; 0x800],
+    ram: [u8; 0x2000],
+    oam: [u8; 0xA0],
+    high_ram: [u8; 0x7F],
 }
 
 impl Mmu {
@@ -94,5 +94,14 @@ impl Mmu {
             // addr == 0xFFFF
             todo!("Interrupt register");
         }
+    }
+
+    pub fn read_u16(&self, addr: u16) -> u16 {
+        ((self.read(addr) as u16) << 8) | (self.read(addr + 1) as u16)
+    }
+
+    pub fn write_u16(&mut self, addr: u16, val: u16) {
+        self.write(addr, (val >> 8) as u8);
+        self.write(addr + 1, val as u8);
     }
 }

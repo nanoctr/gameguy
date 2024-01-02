@@ -1,8 +1,12 @@
-use log::info;
+#![allow(dead_code)]
 
 mod cpu;
-mod registers;
 mod mmu;
+mod opcode;
+mod registers;
+mod util;
+
+use log::info;
 
 fn main() {
     env_logger::init();
