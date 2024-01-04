@@ -540,9 +540,7 @@ impl Cpu {
     }
 
     fn rla(&mut self) {
-        // TODO.MO: convenience function for this?
-        let carry = if self.reg.get_flag(Flag::Carry) { 1 } else { 0 };
-
+        let carry = self.reg.get_flag_bit(Flag::Carry);
         let val = self.reg.read(Register::A);
         let newcarry = val >> 7;
         self.reg.write(Register::A, (val << 1) | carry);
@@ -563,8 +561,7 @@ impl Cpu {
     }
 
     fn rra(&mut self) {
-        // TODO.MO: convenience function for this?
-        let carry = if self.reg.get_flag(Flag::Carry) { 1 } else { 0 };
+        let carry = self.reg.get_flag_bit(Flag::Carry);
 
         let val = self.reg.read(Register::A);
         let newcarry = val & 1;
@@ -616,6 +613,16 @@ impl Cpu {
         let opcode = self.mem.read(self.pc);
 
         Ok(match opcode {
+            0xD9 => unimplemented!("RETI"),
+            0x27 => unimplemented!("DAA"),
+
+            0x2F => CPL,
+            0x37 => SCF,
+            0x3F => CCF,
+            0xC1 => POP(BC),
+            0xD1 => POP(DE),
+            0xE1 => POP(HL),
+            0xF1 => POP(AF),
             0x00 => NOP,
             0x10 => STOP,
 
@@ -624,6 +631,12 @@ impl Cpu {
             0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc + 1) as i8),
             0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc + 1) as i8),
             0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc + 1) as i8),
+
+            0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc + 1)),
+            0xD2 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc + 1)),
+
+            0xCA => JP(Some(Condition::Zero), self.mem.read_u16(self.pc + 1)),
+            0xDA => JP(Some(Condition::Carry), self.mem.read_u16(self.pc + 1)),
 
             // Loads: 16 bit
             0x01 => LD_long(
@@ -722,9 +735,9 @@ impl Cpu {
 
             0x7E => LD(Destination::Register(A), Source::MemoryAtRegister(HL)),
 
-            x if (0x70..0x78).contains(&x) => LD(
+            0x70..=0x75 | 0x77 => LD(
                 Destination::MemoryAtRegister(HL),
-                Source::Register(get_second_reg_param(x).unwrap()),
+                Source::Register(get_second_reg_param(opcode).unwrap()),
             ),
 
             0xEA => LD(
@@ -745,22 +758,22 @@ impl Cpu {
 
             0x76 => HALT,
 
-            x if (0x40..0x80).contains(&x) => {
-                let (dest, src) = get_reg_params(x).unwrap_or_else(|| {
-                    panic!("This opcode doesn't take two registers as params: {x:X}")
+            0x40..=0x7F => {
+                let (dest, src) = get_reg_params(opcode).unwrap_or_else(|| {
+                    panic!("This opcode doesn't take two registers as params: {opcode:X}")
                 });
 
                 LD(Destination::Register(dest), Source::Register(src))
             }
 
-            x if (0x80..0x88).contains(&x) => ADD(get_arithmetic_second_param(x)),
-            x if (0x88..0x8F).contains(&x) => ADC(get_arithmetic_second_param(x)),
-            x if (0x90..0x98).contains(&x) => SUB(get_arithmetic_second_param(x)),
-            x if (0x98..0x9F).contains(&x) => SBC(get_arithmetic_second_param(x)),
-            x if (0xA0..0xA8).contains(&x) => AND(get_arithmetic_second_param(x)),
-            x if (0xA8..0xAF).contains(&x) => XOR(get_arithmetic_second_param(x)),
-            x if (0xB0..0xB8).contains(&x) => OR(get_arithmetic_second_param(x)),
-            x if (0xB8..0xBF).contains(&x) => CP(get_arithmetic_second_param(x)),
+            0x80..=0x87 => ADD(get_arithmetic_second_param(opcode)),
+            0x88..=0x8F => ADC(get_arithmetic_second_param(opcode)),
+            0x90..=0x97 => SUB(get_arithmetic_second_param(opcode)),
+            0x98..=0x9F => SBC(get_arithmetic_second_param(opcode)),
+            0xA0..=0xA7 => AND(get_arithmetic_second_param(opcode)),
+            0xA8..=0xAF => XOR(get_arithmetic_second_param(opcode)),
+            0xB0..=0xB7 => OR(get_arithmetic_second_param(opcode)),
+            0xB8..=0xBF => CP(get_arithmetic_second_param(opcode)),
             0xC6 => ADD(Source::Number(self.mem.read(self.pc + 1))),
             0xD6 => SUB(Source::Number(self.mem.read(self.pc + 1))),
             0xE6 => AND(Source::Number(self.mem.read(self.pc + 1))),
@@ -847,55 +860,54 @@ impl Cpu {
 
             0xCB => self.parse_bit_instr()?,
 
-            // TODO: This is probably wrong? They seem to take an offset, dunno
-            // 0x20 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc + 1)),
-            // 0x30 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc + 1)),
-            invalid => return Err(format!("Invalid opcode: 0x{invalid:X}")),
+            0xD3 | 0xE3 | 0xE4 | 0xF4 | 0xDB | 0xEB | 0xEC | 0xFC | 0xDD | 0xED | 0xFD => {
+                panic!("Unused opcode, what do?");
+            }
         })
     }
 
     fn parse_bit_instr(&mut self) -> Result<Instruction, String> {
         use Instruction::*;
+
         let opcode = self.mem.read(self.pc + 1);
+        let param = get_bit_param(opcode);
 
         Ok(match opcode {
-            x if (0x00..0x08).contains(&x) => RLC(get_bit_param(x)),
-            x if (0x08..0x0F).contains(&x) => RRC(get_bit_param(x)),
-            x if (0x10..0x18).contains(&x) => RL(get_bit_param(x)),
-            x if (0x18..0x1F).contains(&x) => RR(get_bit_param(x)),
-            x if (0x20..0x28).contains(&x) => SLA(get_bit_param(x)),
-            x if (0x28..0x2F).contains(&x) => SRA(get_bit_param(x)),
-            x if (0x30..0x38).contains(&x) => SWAP(get_bit_param(x)),
-            x if (0x38..0x3F).contains(&x) => SRL(get_bit_param(x)),
+            0x00..=0x07 => RLC(param),
+            0x08..=0x0F => RRC(param),
+            0x10..=0x17 => RL(param),
+            0x18..=0x1F => RR(param),
+            0x20..=0x27 => SLA(param),
+            0x28..=0x2F => SRA(param),
+            0x30..=0x37 => SWAP(param),
+            0x38..=0x3F => SRL(param),
 
-            x if (0x40..0x48).contains(&x) => BIT(0, get_bit_param(x)),
-            x if (0x48..0x4F).contains(&x) => BIT(1, get_bit_param(x)),
-            x if (0x50..0x58).contains(&x) => BIT(2, get_bit_param(x)),
-            x if (0x58..0x5F).contains(&x) => BIT(3, get_bit_param(x)),
-            x if (0x60..0x68).contains(&x) => BIT(4, get_bit_param(x)),
-            x if (0x68..0x6F).contains(&x) => BIT(5, get_bit_param(x)),
-            x if (0x70..0x78).contains(&x) => BIT(6, get_bit_param(x)),
-            x if (0x78..0x7F).contains(&x) => BIT(7, get_bit_param(x)),
+            0x40..=0x47 => BIT(0, param),
+            0x48..=0x4F => BIT(1, param),
+            0x50..=0x57 => BIT(2, param),
+            0x58..=0x5F => BIT(3, param),
+            0x60..=0x67 => BIT(4, param),
+            0x68..=0x6F => BIT(5, param),
+            0x70..=0x77 => BIT(6, param),
+            0x78..=0x7F => BIT(7, param),
 
-            x if (0x80..0x88).contains(&x) => RES(0, get_bit_param(x)),
-            x if (0x88..0x8F).contains(&x) => RES(1, get_bit_param(x)),
-            x if (0x90..0x98).contains(&x) => RES(2, get_bit_param(x)),
-            x if (0x98..0x9F).contains(&x) => RES(3, get_bit_param(x)),
-            x if (0xA0..0xA8).contains(&x) => RES(4, get_bit_param(x)),
-            x if (0xA8..0xAF).contains(&x) => RES(5, get_bit_param(x)),
-            x if (0xB0..0xB8).contains(&x) => RES(6, get_bit_param(x)),
-            x if (0xB8..0xBF).contains(&x) => RES(7, get_bit_param(x)),
+            0x80..=0x87 => RES(0, param),
+            0x88..=0x8F => RES(1, param),
+            0x90..=0x97 => RES(2, param),
+            0x98..=0x9F => RES(3, param),
+            0xA0..=0xA7 => RES(4, param),
+            0xA8..=0xAF => RES(5, param),
+            0xB0..=0xB7 => RES(6, param),
+            0xB8..=0xBF => RES(7, param),
 
-            x if (0xC0..0xC8).contains(&x) => SET(0, get_bit_param(x)),
-            x if (0xC8..0xCF).contains(&x) => SET(1, get_bit_param(x)),
-            x if (0xD0..0xD8).contains(&x) => SET(2, get_bit_param(x)),
-            x if (0xD8..0xDF).contains(&x) => SET(3, get_bit_param(x)),
-            x if (0xE0..0xE8).contains(&x) => SET(4, get_bit_param(x)),
-            x if (0xE8..0xEF).contains(&x) => SET(5, get_bit_param(x)),
-            x if (0xF0..0xF8).contains(&x) => SET(6, get_bit_param(x)),
-            x if (0xF8..0xFF).contains(&x) => SET(7, get_bit_param(x)),
-
-            invalid => return Err(format!("Invalid bit operation opcode: 0x{invalid:X}")),
+            0xC0..=0xC7 => SET(0, param),
+            0xC8..=0xCF => SET(1, param),
+            0xD0..=0xD7 => SET(2, param),
+            0xD8..=0xDF => SET(3, param),
+            0xE0..=0xE7 => SET(4, param),
+            0xE8..=0xEF => SET(5, param),
+            0xF0..=0xF7 => SET(6, param),
+            0xF8..=0xFF => SET(7, param),
         })
     }
 
@@ -909,14 +921,13 @@ impl Cpu {
     }
 
     fn cpl(&mut self) {
-        let val = self.reg.read(Register::A);
-        self.reg.write(Register::A, !val);
+        self.reg.write(Register::A, !self.reg.read(Register::A));
         self.reg.set_flags(&[Flag::HalfCarry, Flag::Negative], true);
     }
 
     fn ccf(&mut self) {
         self.reg
-            .set_flag(Flag::Carry, self.reg.get_flag(Flag::Carry));
+            .set_flag(Flag::Carry, !self.reg.get_flag(Flag::Carry));
         self.reg.set_flags(&[Flag::HalfCarry, Flag::Carry], false);
     }
 

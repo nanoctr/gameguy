@@ -119,6 +119,14 @@ impl Registers {
         self.f & (0b0000_0001 << flag.get_flag_bit_offset()) != 0
     }
 
+    pub fn get_flag_bit(&self, flag: Flag) -> u8 {
+        if self.get_flag(flag) {
+            1
+        } else {
+            0
+        }
+    }
+
     pub fn set_flags(&mut self, flags: &[Flag], value: bool) {
         for flag in flags.iter() {
             self.set_flag(*flag, value);
