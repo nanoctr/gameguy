@@ -1,5 +1,5 @@
 use crate::{
-    instruction::{ArithmeticSource, BitOperand, LoadDestination, LoadSource},
+    instruction::{AluSource, BitOperand, LoadDestination, LoadSource},
     registers::Register,
 };
 
@@ -9,11 +9,11 @@ pub enum RegOrMemHl {
     Register(Register),
 }
 
-impl From<RegOrMemHl> for ArithmeticSource {
+impl From<RegOrMemHl> for AluSource {
     fn from(value: RegOrMemHl) -> Self {
         match value {
-            RegOrMemHl::MemoryAtHl => ArithmeticSource::MemoryAtHl,
-            RegOrMemHl::Register(reg) => ArithmeticSource::Register(reg),
+            RegOrMemHl::MemoryAtHl => AluSource::MemoryAtHl,
+            RegOrMemHl::Register(reg) => AluSource::Register(reg),
         }
     }
 }

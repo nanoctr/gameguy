@@ -2,9 +2,8 @@ mod helper;
 
 use crate::{
     instruction::{
-        ArithmeticSource, Condition, IncDecOp, IncdecDestination, IncdecLongDestination,
-        Instruction, IoMemoryOffset, LoadDestination, LoadLongDestination, LoadLongSource,
-        LoadSource,
+        AluSource, Condition, IncDecOp, IncdecDestination, IncdecLongDestination, Instruction,
+        IoMemoryOffset, LoadDestination, LoadLongDestination, LoadLongSource, LoadSource,
     },
     mmu::Mmu,
     op_parsing::helper::RegOrMemHl,
@@ -107,14 +106,14 @@ pub fn parse_next_instr(mem: &Mmu, mut pc: u16) -> Instruction {
         0xA8..=0xAF => XOR(get_reg_param(opcode).into()),
         0xB0..=0xB7 => OR(get_reg_param(opcode).into()),
         0xB8..=0xBF => CP(get_reg_param(opcode).into()),
-        0xC6 => ADD(ArithmeticSource::Immediate(mem.read(pc))),
-        0xD6 => SUB(ArithmeticSource::Immediate(mem.read(pc))),
-        0xE6 => AND(ArithmeticSource::Immediate(mem.read(pc))),
-        0xF6 => OR(ArithmeticSource::Immediate(mem.read(pc))),
-        0xCE => ADC(ArithmeticSource::Immediate(mem.read(pc))),
-        0xDE => SBC(ArithmeticSource::Immediate(mem.read(pc))),
-        0xEE => XOR(ArithmeticSource::Immediate(mem.read(pc))),
-        0xFE => CP(ArithmeticSource::Immediate(mem.read(pc))),
+        0xC6 => ADD(AluSource::Immediate(mem.read(pc))),
+        0xD6 => SUB(AluSource::Immediate(mem.read(pc))),
+        0xE6 => AND(AluSource::Immediate(mem.read(pc))),
+        0xF6 => OR(AluSource::Immediate(mem.read(pc))),
+        0xCE => ADC(AluSource::Immediate(mem.read(pc))),
+        0xDE => SBC(AluSource::Immediate(mem.read(pc))),
+        0xEE => XOR(AluSource::Immediate(mem.read(pc))),
+        0xFE => CP(AluSource::Immediate(mem.read(pc))),
 
         // ADD 16 bit
         0x09 => ADD_hl(BC),
