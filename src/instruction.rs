@@ -74,16 +74,20 @@ pub enum LoadLongSource {
     HL,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum BitOperand {
+    MemoryAtHL,
+    Register(Register),
+}
+
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
-    NOP,
-    STOP,
-    HALT,
-
+    // loads
     LD(LoadDestination, LoadSource),
     LD_long(LoadLongDestination, LoadLongSource),
 
+    // arithmetic operations
     INCDEC(IncdecDestination, IncDecOp),
     INCDEC_long(IncdecLongDestination, IncDecOp),
 
@@ -99,19 +103,10 @@ pub enum Instruction {
     ADD_hl(LongRegister),
     ADD_hl_hl,
 
-    RLCA,
-    RLA,
-    RRCA,
-    RRA,
-
-    CPL,
-
-    CCF,
-    SCF,
-
     PUSH(LongRegister),
     POP(LongRegister),
 
+    // jumps and calls
     JP(Option<Condition>, u16),
     JP_hl,
     JR(Option<Condition>, i8),
@@ -121,6 +116,11 @@ pub enum Instruction {
     RET(Option<Condition>),
 
     // Bit operations
+    RLCA,
+    RLA,
+    RRCA,
+    RRA,
+
     RLC(BitOperand),
     RRC(BitOperand),
     RL(BitOperand),
@@ -137,12 +137,15 @@ pub enum Instruction {
     // interrupts
     EI,
     DI,
-}
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BitOperand {
-    MemoryAtHL,
-    Register(Register),
+    // misc
+    NOP,
+    STOP,
+    HALT,
+
+    CPL,
+    CCF,
+    SCF,
 }
 
 impl Instruction {
@@ -276,10 +279,5 @@ impl Instruction {
         //
         //     _ => return Err(format!("Invalid instruction: {self:?}")),
         // })
-    }
-
-    // TODO: This doesn't work with conditional jumps
-    pub fn is_jump(&self) -> bool {
-        todo!("This is garbage.");
     }
 }

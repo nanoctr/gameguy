@@ -95,10 +95,6 @@ impl Cpu {
             x => return Err(format!("Instruction not implemented: {x:?}")),
         }
 
-        if !instr.is_jump() {
-            self.pc += instr.length()?
-        }
-
         instr.cycles()
     }
 
@@ -624,10 +620,15 @@ impl Cpu {
     // TODO: Move this out of the cpu
     fn parse_next_instr(&mut self) -> Result<Instruction, String> {
         use Instruction::*;
+        use LoadDestination as LdDst;
+        use LoadLongDestination as LdLongDest;
+        use LoadLongSource as LdLongSrc;
+        use LoadSource as LdSrc;
         use LongRegister::*;
         use Register::*;
 
         let opcode = self.mem.read(self.pc);
+        self.pc += 1;
 
         Ok(match opcode {
             0xD9 => unimplemented!("RETI"),
@@ -643,176 +644,104 @@ impl Cpu {
             0x00 => NOP,
             0x10 => STOP,
 
-            0x18 => JR(None, self.mem.read(self.pc + 1) as i8),
-            0x28 => JR(Some(Condition::Zero), self.mem.read(self.pc + 1) as i8),
-            0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc + 1) as i8),
-            0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc + 1) as i8),
-            0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc + 1) as i8),
+            0x18 => JR(None, self.mem.read(self.pc) as i8),
+            0x28 => JR(Some(Condition::Zero), self.mem.read(self.pc) as i8),
+            0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc) as i8),
+            0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc) as i8),
+            0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc) as i8),
 
-            0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc + 1)),
-            0xD2 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc + 1)),
+            0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc)),
+            0xD2 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc)),
 
-            0xCA => JP(Some(Condition::Zero), self.mem.read_u16(self.pc + 1)),
-            0xDA => JP(Some(Condition::Carry), self.mem.read_u16(self.pc + 1)),
+            0xCA => JP(Some(Condition::Zero), self.mem.read_u16(self.pc)),
+            0xDA => JP(Some(Condition::Carry), self.mem.read_u16(self.pc)),
 
             // Loads: 16 bit
             0x01 => LD_long(
-                LoadLongDestination::Register(BC),
-                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
+                LdLongDest::Register(BC),
+                LdLongSrc::Immediate(self.mem.read_u16(self.pc)),
             ),
             0x11 => LD_long(
-                LoadLongDestination::Register(DE),
-                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
+                LdLongDest::Register(DE),
+                LdLongSrc::Immediate(self.mem.read_u16(self.pc)),
             ),
             0x21 => LD_long(
-                LoadLongDestination::Register(HL),
-                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
+                LdLongDest::Register(HL),
+                LdLongSrc::Immediate(self.mem.read_u16(self.pc)),
             ),
             0x31 => LD_long(
-                LoadLongDestination::SP,
-                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
+                LdLongDest::SP,
+                LdLongSrc::Immediate(self.mem.read_u16(self.pc)),
             ),
             0x08 => LD_long(
-                LoadLongDestination::MemoryAt(self.mem.read_u16(self.pc + 1)),
-                LoadLongSource::SP,
+                LdLongDest::MemoryAt(self.mem.read_u16(self.pc)),
+                LdLongSrc::SP,
             ),
             0xF8 => LD_long(
-                LoadLongDestination::Register(HL),
-                LoadLongSource::SP_Offset(self.mem.read(self.pc + 1) as i8),
+                LdLongDest::Register(HL),
+                LdLongSrc::SP_Offset(self.mem.read(self.pc) as i8),
             ),
-            0xF9 => LD_long(LoadLongDestination::SP, LoadLongSource::HL),
+            0xF9 => LD_long(LdLongDest::SP, LdLongSrc::HL),
             0xE8 => LD_long(
-                LoadLongDestination::SP,
-                LoadLongSource::Immediate(self.mem.read(self.pc + 1) as u16),
+                LdLongDest::SP,
+                LdLongSrc::Immediate(self.mem.read(self.pc) as u16),
             ),
 
             // Loads: 8 bit
-            0x02 => LD(
-                LoadDestination::MemoryAtRegister(BC),
-                LoadSource::Register(A),
-            ),
-            0x12 => LD(
-                LoadDestination::MemoryAtRegister(DE),
-                LoadSource::Register(A),
-            ),
-            0x22 => LD(
-                LoadDestination::MemoryAtHl(Some(IncDecOp::Inc)),
-                LoadSource::Register(A),
-            ),
-            0x32 => LD(
-                LoadDestination::MemoryAtHl(Some(IncDecOp::Dec)),
-                LoadSource::Register(A),
-            ),
-            0x06 => LD(
-                LoadDestination::Register(B),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
-            0x16 => LD(
-                LoadDestination::Register(D),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
-            0x26 => LD(
-                LoadDestination::Register(H),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
+            0x02 => LD(LdDst::MemoryAtRegister(BC), LdSrc::Register(A)),
+            0x12 => LD(LdDst::MemoryAtRegister(DE), LdSrc::Register(A)),
+            0x22 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Inc)), LdSrc::Register(A)),
+            0x32 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Dec)), LdSrc::Register(A)),
+            0x06 => LD(LdDst::Register(B), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x16 => LD(LdDst::Register(D), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x26 => LD(LdDst::Register(H), LdSrc::Immediate(self.mem.read(self.pc))),
             0x36 => LD(
-                LoadDestination::MemoryAtRegister(HL),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
+                LdDst::MemoryAtRegister(HL),
+                LdSrc::Immediate(self.mem.read(self.pc)),
             ),
-            0x0A => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAtRegister(BC),
-            ),
-            0x1A => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAtRegister(DE),
-            ),
-            0x2A => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAtHl(Some(IncDecOp::Inc)),
-            ),
-            0x3A => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAtHl(Some(IncDecOp::Dec)),
-            ),
-            0x0E => LD(
-                LoadDestination::Register(C),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
-            0x1E => LD(
-                LoadDestination::Register(E),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
-            0x2E => LD(
-                LoadDestination::Register(L),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
-            0x3E => LD(
-                LoadDestination::Register(A),
-                LoadSource::Immediate(self.mem.read(self.pc + 1)),
-            ),
+            0x0A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(BC)),
+            0x1A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(DE)),
+            0x2A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Inc))),
+            0x3A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Dec))),
+            0x0E => LD(LdDst::Register(C), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x1E => LD(LdDst::Register(E), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x2E => LD(LdDst::Register(L), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x3E => LD(LdDst::Register(A), LdSrc::Immediate(self.mem.read(self.pc))),
 
-            0x46 => LD(
-                LoadDestination::Register(B),
-                LoadSource::MemoryAtRegister(HL),
-            ),
-            0x4E => LD(
-                LoadDestination::Register(C),
-                LoadSource::MemoryAtRegister(HL),
-            ),
+            0x46 => LD(LdDst::Register(B), LdSrc::MemoryAtRegister(HL)),
+            0x4E => LD(LdDst::Register(C), LdSrc::MemoryAtRegister(HL)),
 
-            0x56 => LD(
-                LoadDestination::Register(D),
-                LoadSource::MemoryAtRegister(HL),
-            ),
-            0x5E => LD(
-                LoadDestination::Register(E),
-                LoadSource::MemoryAtRegister(HL),
-            ),
+            0x56 => LD(LdDst::Register(D), LdSrc::MemoryAtRegister(HL)),
+            0x5E => LD(LdDst::Register(E), LdSrc::MemoryAtRegister(HL)),
 
-            0x66 => LD(
-                LoadDestination::Register(H),
-                LoadSource::MemoryAtRegister(HL),
-            ),
-            0x6E => LD(
-                LoadDestination::Register(L),
-                LoadSource::MemoryAtRegister(HL),
-            ),
+            0x66 => LD(LdDst::Register(H), LdSrc::MemoryAtRegister(HL)),
+            0x6E => LD(LdDst::Register(L), LdSrc::MemoryAtRegister(HL)),
 
-            0x7E => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAtRegister(HL),
-            ),
+            0x7E => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(HL)),
 
             0x70..=0x75 | 0x77 => LD(
-                LoadDestination::MemoryAtRegister(HL),
-                LoadSource::Register(get_second_reg_param(opcode).unwrap()),
+                LdDst::MemoryAtRegister(HL),
+                LdSrc::Register(get_second_reg_param(opcode)),
             ),
 
             0xEA => LD(
-                LoadDestination::MemoryAt(self.mem.read_u16(self.pc + 1)),
-                LoadSource::Register(A),
+                LdDst::MemoryAt(self.mem.read_u16(self.pc)),
+                LdSrc::Register(A),
             ),
             0xFA => LD(
-                LoadDestination::Register(A),
-                LoadSource::MemoryAt(self.mem.read_u16(self.pc + 1)),
+                LdDst::Register(A),
+                LdSrc::MemoryAt(self.mem.read_u16(self.pc)),
             ),
             0xE0 => LD(
-                LoadDestination::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc + 1))),
-                LoadSource::Register(A),
+                LdDst::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
+                LdSrc::Register(A),
             ),
             0xF0 => LD(
-                LoadDestination::Register(A),
-                LoadSource::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc + 1))),
+                LdDst::Register(A),
+                LdSrc::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
             ),
-            0xE2 => LD(
-                LoadDestination::IoMemory(IoMemoryOffset::C),
-                LoadSource::Register(A),
-            ),
-            0xF2 => LD(
-                LoadDestination::Register(A),
-                LoadSource::IoMemory(IoMemoryOffset::C),
-            ),
+            0xE2 => LD(LdDst::IoMemory(IoMemoryOffset::C), LdSrc::Register(A)),
+            0xF2 => LD(LdDst::Register(A), LdSrc::IoMemory(IoMemoryOffset::C)),
 
             0x76 => HALT,
 
@@ -821,7 +750,7 @@ impl Cpu {
                     panic!("This opcode doesn't take two registers as params: {opcode:X}")
                 });
 
-                LD(LoadDestination::Register(dest), LoadSource::Register(src))
+                LD(LdDst::Register(dest), LdSrc::Register(src))
             }
 
             0x80..=0x87 => ADD(get_arithmetic_second_param(opcode)),
@@ -832,14 +761,14 @@ impl Cpu {
             0xA8..=0xAF => XOR(get_arithmetic_second_param(opcode)),
             0xB0..=0xB7 => OR(get_arithmetic_second_param(opcode)),
             0xB8..=0xBF => CP(get_arithmetic_second_param(opcode)),
-            0xC6 => ADD(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xD6 => SUB(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xE6 => AND(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xF6 => OR(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xCE => ADC(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xDE => SBC(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xEE => XOR(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
-            0xFE => CP(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xC6 => ADD(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xD6 => SUB(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xE6 => AND(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xF6 => OR(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xCE => ADC(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xDE => SBC(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xEE => XOR(ArithmeticSource::Immediate(self.mem.read(self.pc))),
+            0xFE => CP(ArithmeticSource::Immediate(self.mem.read(self.pc))),
 
             // ADD 16 bit
             0x09 => ADD_hl(BC),
@@ -889,7 +818,7 @@ impl Cpu {
             0xF5 => PUSH(AF),
 
             // Jumps
-            0xC3 => JP(None, self.mem.read_u16(self.pc + 1)),
+            0xC3 => JP(None, self.mem.read_u16(self.pc)),
             0xE9 => JP_hl,
 
             0xC7 => RST(0),
@@ -901,11 +830,11 @@ impl Cpu {
             0xEF => RST(0x28),
             0xFF => RST(0x38),
 
-            0xCD => CALL(None, self.mem.read_u16(self.pc + 1)),
-            0xC4 => CALL(Some(Condition::NotZero), self.mem.read_u16(self.pc + 1)),
-            0xD4 => CALL(Some(Condition::NotCarry), self.mem.read_u16(self.pc + 1)),
-            0xCC => CALL(Some(Condition::Zero), self.mem.read_u16(self.pc + 1)),
-            0xDC => CALL(Some(Condition::Carry), self.mem.read_u16(self.pc + 1)),
+            0xCD => CALL(None, self.mem.read_u16(self.pc)),
+            0xC4 => CALL(Some(Condition::NotZero), self.mem.read_u16(self.pc)),
+            0xD4 => CALL(Some(Condition::NotCarry), self.mem.read_u16(self.pc)),
+            0xCC => CALL(Some(Condition::Zero), self.mem.read_u16(self.pc)),
+            0xDC => CALL(Some(Condition::Carry), self.mem.read_u16(self.pc)),
 
             0xC9 => RET(None),
             0xC0 => RET(Some(Condition::NotZero)),
@@ -994,59 +923,36 @@ impl Cpu {
         self.reg.set_flags(&[Flag::HalfCarry, Flag::Carry], false);
     }
 
-    fn jump(&mut self, cond: Option<Condition>, addr: u16) {
-        let should_jump = match cond {
-            None => true,
-            Some(Condition::Zero) => self.reg.get_flag(Flag::Zero),
-            Some(Condition::Carry) => self.reg.get_flag(Flag::Carry),
-            Some(Condition::NotZero) => !self.reg.get_flag(Flag::Zero),
-            Some(Condition::NotCarry) => !self.reg.get_flag(Flag::Carry),
-        };
+    fn eval_condition(&self, cond: Condition) -> bool {
+        match cond {
+            Condition::Zero => self.reg.get_flag(Flag::Zero),
+            Condition::Carry => self.reg.get_flag(Flag::Carry),
+            Condition::NotZero => !self.reg.get_flag(Flag::Zero),
+            Condition::NotCarry => !self.reg.get_flag(Flag::Carry),
+        }
+    }
 
-        if should_jump {
+    fn jump(&mut self, cond: Option<Condition>, addr: u16) {
+        if cond.is_none() || self.eval_condition(cond.unwrap()) {
             self.pc = addr;
         }
     }
 
     fn relative_jump(&mut self, cond: Option<Condition>, offset: i8) {
-        let should_jump = match cond {
-            None => true,
-            Some(Condition::Zero) => self.reg.get_flag(Flag::Zero),
-            Some(Condition::Carry) => self.reg.get_flag(Flag::Carry),
-            Some(Condition::NotZero) => !self.reg.get_flag(Flag::Zero),
-            Some(Condition::NotCarry) => !self.reg.get_flag(Flag::Carry),
-        };
-
-        if should_jump {
+        if cond.is_none() || self.eval_condition(cond.unwrap()) {
             self.pc = self.pc.checked_add_signed(offset as i16).unwrap();
         }
     }
 
     fn call(&mut self, cond: Option<Condition>, addr: u16) {
-        let should_call = match cond {
-            None => true,
-            Some(Condition::Zero) => self.reg.get_flag(Flag::Zero),
-            Some(Condition::Carry) => self.reg.get_flag(Flag::Carry),
-            Some(Condition::NotZero) => !self.reg.get_flag(Flag::Zero),
-            Some(Condition::NotCarry) => !self.reg.get_flag(Flag::Carry),
-        };
-
-        if should_call {
+        if cond.is_none() || self.eval_condition(cond.unwrap()) {
             self.push_pc_stack();
             self.pc = addr;
         }
     }
 
     fn ret(&mut self, cond: Option<Condition>) {
-        let should_return = match cond {
-            None => true,
-            Some(Condition::Zero) => self.reg.get_flag(Flag::Zero),
-            Some(Condition::Carry) => self.reg.get_flag(Flag::Carry),
-            Some(Condition::NotZero) => !self.reg.get_flag(Flag::Zero),
-            Some(Condition::NotCarry) => !self.reg.get_flag(Flag::Carry),
-        };
-
-        if should_return {
+        if cond.is_none() || self.eval_condition(cond.unwrap()) {
             self.pop_stack_pc();
         }
     }
@@ -1065,9 +971,6 @@ impl Cpu {
 }
 
 // TODO: Naming, this is also used for bit operations where it's not the -second- param necessarily
-// TODO: Don't return a Source here; instead return a narrower type that is only
-// Register|MemoryAtRegister(LongRegister::HL) and impement from::From<NarrowerType> for Source
-// After this is done, get_bit_param can be merged with this function.
 fn get_arithmetic_second_param(opcode: u8) -> ArithmeticSource {
     use Register::*;
 
@@ -1107,27 +1010,26 @@ fn get_reg_params(opcode: u8) -> Option<(Register, Register)> {
     let high = opcode & 0xF0;
     let low = opcode & 0x0F;
 
-    // TODO: low matching seems unnecessary?
     Some(match (high, low) {
-        (40, low) if low < 8 => (B, get_second_reg_param(low)?),
-        (40, low) => (C, get_second_reg_param(low)?),
+        (40, 0..=7) => (B, get_second_reg_param(low)),
+        (40, 8..) => (C, get_second_reg_param(low)),
 
-        (50, low) if low < 8 => (D, get_second_reg_param(low)?),
-        (50, low) => (E, get_second_reg_param(low)?),
+        (50, 0..=7) => (D, get_second_reg_param(low)),
+        (50, 8..) => (E, get_second_reg_param(low)),
 
-        (60, low) if low < 8 => (H, get_second_reg_param(low)?),
-        (60, low) => (L, get_second_reg_param(low)?),
+        (60, 0..=7) => (H, get_second_reg_param(low)),
+        (60, 8..) => (L, get_second_reg_param(low)),
 
-        (70, low) if low > 7 => (A, get_second_reg_param(low)?),
+        (70, 8..) => (A, get_second_reg_param(low)),
 
         _ => return None,
     })
 }
 
-fn get_second_reg_param(number: u8) -> Option<Register> {
+fn get_second_reg_param(number: u8) -> Register {
     use Register::*;
 
-    Some(match number % 8 {
+    match number % 8 {
         0 => B,
         1 => C,
         2 => D,
@@ -1135,6 +1037,6 @@ fn get_second_reg_param(number: u8) -> Option<Register> {
         4 => H,
         5 => L,
         7 => A,
-        _ => return None,
-    })
+        _ => unreachable!(),
+    }
 }
