@@ -1,7 +1,8 @@
 use crate::{
     instruction::{
-        BitOperand, Condition, IncDecOp, IncdecDestination, IncdecLongDestination, Instruction,
-        IoMemoryOffset, LoadDestination, LoadLongDestination, LoadLongSource, LoadSource, Source,
+        ArithmeticSource, BitOperand, Condition, IncDecOp, IncdecDestination,
+        IncdecLongDestination, Instruction, IoMemoryOffset, LoadDestination, LoadLongDestination,
+        LoadLongSource, LoadSource,
     },
     mmu::Mmu,
     registers::{Flag, LongRegister, Register, Registers},
@@ -407,7 +408,7 @@ impl Cpu {
         }
     }
 
-    fn add(&mut self, source: Source, add_with_carry: bool) {
+    fn add(&mut self, source: ArithmeticSource, add_with_carry: bool) {
         let carry = if add_with_carry && self.reg.get_flag(Flag::Carry) {
             1
         } else {
@@ -434,7 +435,7 @@ impl Cpu {
         self.reg.write(Register::A, result);
     }
 
-    fn sub(&mut self, source: Source, sub_with_carry: bool) {
+    fn sub(&mut self, source: ArithmeticSource, sub_with_carry: bool) {
         let carry = if sub_with_carry && self.reg.get_flag(Flag::Carry) {
             1
         } else {
@@ -464,7 +465,7 @@ impl Cpu {
         self.reg.write(Register::A, result);
     }
 
-    fn and(&mut self, source: Source) {
+    fn and(&mut self, source: ArithmeticSource) {
         let val = self.get_source_value(source);
 
         let result = self.reg.read(Register::A) & val;
@@ -476,7 +477,7 @@ impl Cpu {
         self.reg.write(Register::A, result);
     }
 
-    fn xor(&mut self, source: Source) {
+    fn xor(&mut self, source: ArithmeticSource) {
         let val = self.get_source_value(source);
 
         let result = self.reg.read(Register::A) ^ val;
@@ -488,7 +489,7 @@ impl Cpu {
         self.reg.write(Register::A, result);
     }
 
-    fn or(&mut self, source: Source) {
+    fn or(&mut self, source: ArithmeticSource) {
         let val = self.get_source_value(source);
 
         self.reg
@@ -500,7 +501,7 @@ impl Cpu {
         self.reg.set_flag(Flag::HalfCarry, false);
     }
 
-    fn cp(&mut self, source: Source) {
+    fn cp(&mut self, source: ArithmeticSource) {
         let val = self.get_source_value(source);
 
         let (new_val, overflow) = self.reg.read(Register::A).overflowing_sub(val);
@@ -612,11 +613,11 @@ impl Cpu {
         self.sp += 2;
     }
 
-    fn get_source_value(&self, source: Source) -> u8 {
+    fn get_source_value(&self, source: ArithmeticSource) -> u8 {
         match source {
-            Source::Register(reg) => self.reg.read(reg),
-            Source::Number(x) => x,
-            Source::MemoryAtRegister(reg) => self.mem.read(self.reg.read_long(reg)),
+            ArithmeticSource::Register(reg) => self.reg.read(reg),
+            ArithmeticSource::Immediate(x) => x,
+            ArithmeticSource::MemoryAtHl => self.mem.read(self.reg.read_long(LongRegister::HL)),
         }
     }
 
@@ -831,14 +832,14 @@ impl Cpu {
             0xA8..=0xAF => XOR(get_arithmetic_second_param(opcode)),
             0xB0..=0xB7 => OR(get_arithmetic_second_param(opcode)),
             0xB8..=0xBF => CP(get_arithmetic_second_param(opcode)),
-            0xC6 => ADD(Source::Number(self.mem.read(self.pc + 1))),
-            0xD6 => SUB(Source::Number(self.mem.read(self.pc + 1))),
-            0xE6 => AND(Source::Number(self.mem.read(self.pc + 1))),
-            0xF6 => OR(Source::Number(self.mem.read(self.pc + 1))),
-            0xCE => ADC(Source::Number(self.mem.read(self.pc + 1))),
-            0xDE => SBC(Source::Number(self.mem.read(self.pc + 1))),
-            0xEE => XOR(Source::Number(self.mem.read(self.pc + 1))),
-            0xFE => CP(Source::Number(self.mem.read(self.pc + 1))),
+            0xC6 => ADD(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xD6 => SUB(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xE6 => AND(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xF6 => OR(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xCE => ADC(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xDE => SBC(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xEE => XOR(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
+            0xFE => CP(ArithmeticSource::Immediate(self.mem.read(self.pc + 1))),
 
             // ADD 16 bit
             0x09 => ADD_hl(BC),
@@ -1067,18 +1068,18 @@ impl Cpu {
 // TODO: Don't return a Source here; instead return a narrower type that is only
 // Register|MemoryAtRegister(LongRegister::HL) and impement from::From<NarrowerType> for Source
 // After this is done, get_bit_param can be merged with this function.
-fn get_arithmetic_second_param(opcode: u8) -> Source {
+fn get_arithmetic_second_param(opcode: u8) -> ArithmeticSource {
     use Register::*;
 
     match (opcode & 0x0F) % 8 {
-        0 => Source::Register(B),
-        1 => Source::Register(C),
-        2 => Source::Register(D),
-        3 => Source::Register(E),
-        4 => Source::Register(H),
-        5 => Source::Register(L),
-        6 => Source::MemoryAtRegister(LongRegister::HL),
-        7 => Source::Register(A),
+        0 => ArithmeticSource::Register(B),
+        1 => ArithmeticSource::Register(C),
+        2 => ArithmeticSource::Register(D),
+        3 => ArithmeticSource::Register(E),
+        4 => ArithmeticSource::Register(H),
+        5 => ArithmeticSource::Register(L),
+        6 => ArithmeticSource::MemoryAtHl,
+        7 => ArithmeticSource::Register(A),
         x => panic!("This should never happen: we're looking at the second nibble only with modulo 8, value was: 0x{x:X}")
     }
 }

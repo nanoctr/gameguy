@@ -1,10 +1,10 @@
 use crate::registers::{LongRegister, Register};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Source {
+pub enum ArithmeticSource {
     Register(Register),
-    Number(u8),
-    MemoryAtRegister(LongRegister),
+    Immediate(u8),
+    MemoryAtHl,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -87,14 +87,14 @@ pub enum Instruction {
     INCDEC(IncdecDestination, IncDecOp),
     INCDEC_long(IncdecLongDestination, IncDecOp),
 
-    ADD(Source),
-    ADC(Source),
-    SUB(Source),
-    SBC(Source),
-    AND(Source),
-    XOR(Source),
-    OR(Source),
-    CP(Source),
+    ADD(ArithmeticSource),
+    ADC(ArithmeticSource),
+    SUB(ArithmeticSource),
+    SBC(ArithmeticSource),
+    AND(ArithmeticSource),
+    XOR(ArithmeticSource),
+    OR(ArithmeticSource),
+    CP(ArithmeticSource),
 
     ADD_hl(LongRegister),
     ADD_hl_hl,
