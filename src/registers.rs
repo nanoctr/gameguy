@@ -91,16 +91,16 @@ impl Registers {
                 self.f = val as u8;
             }
             LongRegister::BC => {
-                self.a = (val >> 8) as u8;
-                self.f = val as u8;
+                self.b = (val >> 8) as u8;
+                self.c = val as u8;
             }
             LongRegister::DE => {
-                self.a = (val >> 8) as u8;
-                self.f = val as u8;
+                self.d = (val >> 8) as u8;
+                self.e = val as u8;
             }
             LongRegister::HL => {
-                self.a = (val >> 8) as u8;
-                self.f = val as u8;
+                self.h = (val >> 8) as u8;
+                self.l = val as u8;
             }
         }
     }
@@ -119,16 +119,8 @@ impl Registers {
         self.f & (0b0000_0001 << flag.get_flag_bit_offset()) != 0
     }
 
-    pub fn get_flag_bit(&self, flag: Flag) -> u8 {
-        if self.get_flag(flag) {
-            1
-        } else {
-            0
-        }
-    }
-
     pub fn set_flags(&mut self, flags: &[Flag], value: bool) {
-        for flag in flags.iter() {
+        for flag in flags {
             self.set_flag(*flag, value);
         }
     }

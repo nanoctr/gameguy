@@ -20,14 +20,14 @@ struct Cpu {
 impl Cpu {
     pub fn step(&mut self) {
         let instr = self.parse_next_instr();
-        dbg!(instr.clone());
-        self.execute(instr);
+        dbg!(instr);
+        self.execute(&instr);
     }
 
-    fn execute(&mut self, instr: Instruction) {
+    fn execute(&mut self, instr: &Instruction) {
         use Instruction::*;
 
-        match instr {
+        match *instr {
             NOP => todo!(),
             STOP => todo!(),
             HALT => todo!(),
@@ -329,9 +329,9 @@ impl Cpu {
         match dest {
             IncdecDestination::Register(reg) => self.reg.write(reg, result),
             IncdecDestination::MemoryAtHL => {
-                self.mem.write(self.reg.read_long(LongRegister::HL), result)
+                self.mem.write(self.reg.read_long(LongRegister::HL), result);
             }
-        }
+        };
     }
 
     fn incdec_long(&mut self, dest: IncdecLongDestination, op: IncDecOp) {
@@ -359,15 +359,11 @@ impl Cpu {
         match dest {
             IncdecLongDestination::Register(reg) => self.reg.write_long(reg, result),
             IncdecLongDestination::SP => self.sp = result,
-        }
+        };
     }
 
     fn add(&mut self, source: ArithmeticSource, add_with_carry: bool) {
-        let carry = if add_with_carry && self.reg.get_flag(Flag::Carry) {
-            1
-        } else {
-            0
-        };
+        let carry = u8::from(add_with_carry && self.reg.get_flag(Flag::Carry));
         let val = self.get_source_value(source);
 
         let (result, overflow) = {
@@ -390,11 +386,7 @@ impl Cpu {
     }
 
     fn sub(&mut self, source: ArithmeticSource, sub_with_carry: bool) {
-        let carry = if sub_with_carry && self.reg.get_flag(Flag::Carry) {
-            1
-        } else {
-            0
-        };
+        let carry = u8::from(sub_with_carry && self.reg.get_flag(Flag::Carry));
         let val = self.get_source_value(source);
 
         let (result, overflow) = {
@@ -511,7 +503,7 @@ impl Cpu {
     }
 
     fn rla(&mut self) {
-        let carry = self.reg.get_flag_bit(Flag::Carry);
+        let carry = u8::from(self.reg.get_flag(Flag::Carry));
         let val = self.reg.read(Register::A);
         let newcarry = val >> 7;
         self.reg.write(Register::A, (val << 1) | carry);
@@ -532,7 +524,7 @@ impl Cpu {
     }
 
     fn rra(&mut self) {
-        let carry = self.reg.get_flag_bit(Flag::Carry);
+        let carry = u8::from(self.reg.get_flag(Flag::Carry));
 
         let val = self.reg.read(Register::A);
         let newcarry = val & 1;

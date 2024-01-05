@@ -80,7 +80,7 @@ pub enum BitOperand {
 }
 
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Instruction {
     NOP,
     STOP,
