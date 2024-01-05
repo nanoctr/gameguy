@@ -47,7 +47,6 @@ pub enum LoadDestination {
     MemoryAt(u16),
     IoMemory(IoMemoryOffset),
 }
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LoadSource {
     Immediate(u8),
@@ -76,7 +75,7 @@ pub enum LoadLongSource {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BitOperand {
-    MemoryAtHL,
+    MemoryAtHl,
     Register(Register),
 }
 

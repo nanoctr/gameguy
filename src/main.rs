@@ -3,6 +3,7 @@
 mod cpu;
 mod instruction;
 mod mmu;
+mod opcode_parsing_helper;
 mod registers;
 mod util;
 

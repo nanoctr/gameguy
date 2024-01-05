@@ -5,6 +5,7 @@ use crate::{
         LoadLongSource, LoadSource,
     },
     mmu::Mmu,
+    opcode_parsing_helper::RegOrMemHl,
     registers::{Flag, LongRegister, Register, Registers},
 };
 
@@ -17,14 +18,13 @@ struct Cpu {
 }
 
 impl Cpu {
-    pub fn step(&mut self) -> Result<(), String> {
-        let instr = self.parse_next_instr()?;
-        self.execute(instr)?;
-
-        Ok(())
+    pub fn step(&mut self) {
+        let instr = self.parse_next_instr();
+        dbg!(instr.clone());
+        self.execute(instr);
     }
 
-    fn execute(&mut self, instr: Instruction) -> Result<u16, String> {
+    fn execute(&mut self, instr: Instruction) {
         use Instruction::*;
 
         match instr {
@@ -90,8 +90,6 @@ impl Cpu {
             SCF => self.scf(),
             CCF => self.ccf(),
         }
-
-        instr.cycles()
     }
 
     fn bit(&mut self, bit: u8, operand: BitOperand) {
@@ -137,14 +135,14 @@ impl Cpu {
 
     fn read_bit_operand(&self, op: BitOperand) -> u8 {
         match op {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
+            BitOperand::MemoryAtHl => self.mem.read(self.reg.read_long(LongRegister::HL)),
             BitOperand::Register(reg) => self.reg.read(reg),
         }
     }
 
     fn write_bit_operand(&mut self, op: BitOperand, val: u8) {
         match op {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), val),
+            BitOperand::MemoryAtHl => self.mem.write(self.reg.read_long(LongRegister::HL), val),
             BitOperand::Register(reg) => self.reg.write(reg, val),
         };
     }
@@ -578,7 +576,7 @@ impl Cpu {
     }
 
     // TODO: Move this out of the cpu
-    fn parse_next_instr(&mut self) -> Result<Instruction, String> {
+    fn parse_next_instr(&mut self) -> Instruction {
         use Instruction::*;
         use LoadDestination as LdDst;
         use LoadLongDestination as LdLongDest;
@@ -590,7 +588,7 @@ impl Cpu {
         let opcode = self.mem.read(self.pc);
         self.pc += 1;
 
-        Ok(match opcode {
+        match opcode {
             0xD9 => unimplemented!("RETI"),
             0x27 => unimplemented!("DAA"),
 
@@ -625,25 +623,14 @@ impl Cpu {
             // TODO: Combine these with the ones below;
             // get_reg_param would have to return a source/dest instead of Register
             // maybe implement from/into for specific param types
-            0x46 => LD(LdDst::Register(B), LdSrc::MemoryAtRegister(HL)),
-            0x4E => LD(LdDst::Register(C), LdSrc::MemoryAtRegister(HL)),
-            0x56 => LD(LdDst::Register(D), LdSrc::MemoryAtRegister(HL)),
-            0x5E => LD(LdDst::Register(E), LdSrc::MemoryAtRegister(HL)),
-            0x66 => LD(LdDst::Register(H), LdSrc::MemoryAtRegister(HL)),
-            0x6E => LD(LdDst::Register(L), LdSrc::MemoryAtRegister(HL)),
-            0x7E => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(HL)),
-
-            0x70..=0x75 | 0x77 => LD(
-                LdDst::MemoryAtRegister(HL),
-                LdSrc::Register(get_second_reg_param(opcode)),
-            ),
+            0x70..=0x75 | 0x77 => LD(LdDst::MemoryAtRegister(HL), (get_reg_param(opcode)).into()),
 
             0x40..=0x7F => {
                 let (dest, src) = get_reg_params(opcode).unwrap_or_else(|| {
                     panic!("This opcode doesn't take two registers as params: {opcode:X}")
                 });
 
-                LD(LdDst::Register(dest), LdSrc::Register(src))
+                LD(dest.into(), src.into())
             }
 
             0xE0 => LD(
@@ -698,14 +685,14 @@ impl Cpu {
             ),
 
             // arithmetic operations
-            0x80..=0x87 => ADD(get_arithmetic_second_param(opcode)),
-            0x88..=0x8F => ADC(get_arithmetic_second_param(opcode)),
-            0x90..=0x97 => SUB(get_arithmetic_second_param(opcode)),
-            0x98..=0x9F => SBC(get_arithmetic_second_param(opcode)),
-            0xA0..=0xA7 => AND(get_arithmetic_second_param(opcode)),
-            0xA8..=0xAF => XOR(get_arithmetic_second_param(opcode)),
-            0xB0..=0xB7 => OR(get_arithmetic_second_param(opcode)),
-            0xB8..=0xBF => CP(get_arithmetic_second_param(opcode)),
+            0x80..=0x87 => ADD(get_reg_param(opcode).into()),
+            0x88..=0x8F => ADC(get_reg_param(opcode).into()),
+            0x90..=0x97 => SUB(get_reg_param(opcode).into()),
+            0x98..=0x9F => SBC(get_reg_param(opcode).into()),
+            0xA0..=0xA7 => AND(get_reg_param(opcode).into()),
+            0xA8..=0xAF => XOR(get_reg_param(opcode).into()),
+            0xB0..=0xB7 => OR(get_reg_param(opcode).into()),
+            0xB8..=0xBF => CP(get_reg_param(opcode).into()),
             0xC6 => ADD(ArithmeticSource::Immediate(self.mem.read(self.pc))),
             0xD6 => SUB(ArithmeticSource::Immediate(self.mem.read(self.pc))),
             0xE6 => AND(ArithmeticSource::Immediate(self.mem.read(self.pc))),
@@ -756,7 +743,7 @@ impl Cpu {
             0x17 => RLA,
             0x0F => RRCA,
             0x1F => RRA,
-            0xCB => self.parse_bit_instr()?,
+            0xCB => self.parse_bit_instr(),
 
             // Jumps
             0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc)),
@@ -815,16 +802,16 @@ impl Cpu {
             0xD3 | 0xE3 | 0xE4 | 0xF4 | 0xDB | 0xEB | 0xEC | 0xFC | 0xDD | 0xED | 0xFD => {
                 panic!("Unused opcode, what do?");
             }
-        })
+        }
     }
 
-    fn parse_bit_instr(&mut self) -> Result<Instruction, String> {
+    fn parse_bit_instr(&mut self) -> Instruction {
         use Instruction::*;
 
         let opcode = self.mem.read(self.pc + 1);
-        let param = get_bit_param(opcode);
+        let param = get_reg_param(opcode).into();
 
-        Ok(match opcode {
+        match opcode {
             0x00..=0x07 => RLC(param),
             0x08..=0x0F => RRC(param),
             0x10..=0x17 => RL(param),
@@ -860,7 +847,7 @@ impl Cpu {
             0xE8..=0xEF => SET(5, param),
             0xF0..=0xF7 => SET(6, param),
             0xF8..=0xFF => SET(7, param),
-        })
+        }
     }
 
     fn cpl(&mut self) {
@@ -927,72 +914,41 @@ impl Cpu {
 }
 
 // TODO: Naming, this is also used for bit operations where it's not the -second- param necessarily
-fn get_arithmetic_second_param(opcode: u8) -> ArithmeticSource {
+fn get_reg_param(opcode: u8) -> RegOrMemHl {
     use Register::*;
 
     match (opcode & 0x0F) % 8 {
-        0 => ArithmeticSource::Register(B),
-        1 => ArithmeticSource::Register(C),
-        2 => ArithmeticSource::Register(D),
-        3 => ArithmeticSource::Register(E),
-        4 => ArithmeticSource::Register(H),
-        5 => ArithmeticSource::Register(L),
-        6 => ArithmeticSource::MemoryAtHl,
-        7 => ArithmeticSource::Register(A),
-        x => panic!("This should never happen: we're looking at the second nibble only with modulo 8, value was: 0x{x:X}")
+        0 => RegOrMemHl::Register(B),
+        1 => RegOrMemHl::Register(C),
+        2 => RegOrMemHl::Register(D),
+        3 => RegOrMemHl::Register(E),
+        4 => RegOrMemHl::Register(H),
+        5 => RegOrMemHl::Register(L),
+        6 => RegOrMemHl::MemoryAtHl,
+        7 => RegOrMemHl::Register(A),
+        _ => unreachable!(),
     }
 }
 
-// TODO: Naming, this is also used for bit operations where it's not the -second- param necessarily
-fn get_bit_param(opcode: u8) -> BitOperand {
-    use Register::*;
-
-    match (opcode & 0x0F) % 8 {
-        0 => BitOperand::Register(B),
-        1 => BitOperand::Register(C),
-        2 => BitOperand::Register(D),
-        3 => BitOperand::Register(E),
-        4 => BitOperand::Register(H),
-        5 => BitOperand::Register(L),
-        6 => BitOperand::MemoryAtHL,
-        7 => BitOperand::Register(A),
-        x => panic!("This should never happen: we're looking at the second nibble only with modulo 8, value was: 0x{x:X}")
-    }
-}
-
-fn get_reg_params(opcode: u8) -> Option<(Register, Register)> {
+fn get_reg_params(opcode: u8) -> Option<(RegOrMemHl, RegOrMemHl)> {
     use Register::*;
 
     let high = opcode & 0xF0;
     let low = opcode & 0x0F;
 
     Some(match (high, low) {
-        (40, 0..=7) => (B, get_second_reg_param(low)),
-        (40, 8..) => (C, get_second_reg_param(low)),
+        (40, 0..=7) => (RegOrMemHl::Register(B), get_reg_param(low)),
+        (40, 8..) => (RegOrMemHl::Register(C), get_reg_param(low)),
 
-        (50, 0..=7) => (D, get_second_reg_param(low)),
-        (50, 8..) => (E, get_second_reg_param(low)),
+        (50, 0..=7) => (RegOrMemHl::Register(D), get_reg_param(low)),
+        (50, 8..) => (RegOrMemHl::Register(E), get_reg_param(low)),
 
-        (60, 0..=7) => (H, get_second_reg_param(low)),
-        (60, 8..) => (L, get_second_reg_param(low)),
+        (60, 0..=7) => (RegOrMemHl::Register(H), get_reg_param(low)),
+        (60, 8..) => (RegOrMemHl::Register(L), get_reg_param(low)),
 
-        (70, 8..) => (A, get_second_reg_param(low)),
+        (70, 0..=7) => (RegOrMemHl::MemoryAtHl, get_reg_param(low)),
+        (70, 8..) => (RegOrMemHl::Register(A), get_reg_param(low)),
 
         _ => return None,
     })
-}
-
-fn get_second_reg_param(number: u8) -> Register {
-    use Register::*;
-
-    match number % 8 {
-        0 => B,
-        1 => C,
-        2 => D,
-        3 => E,
-        4 => H,
-        5 => L,
-        7 => A,
-        _ => unreachable!(),
-    }
 }
