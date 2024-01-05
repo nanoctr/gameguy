@@ -1,7 +1,7 @@
 use crate::{
     instruction::{
-        BitOperand, Condition, Destination, IncdecDestination, IncdecLongDestination, IncrementOp,
-        Instruction, LoadHighOperand, LongDestination, LongSource, Source,
+        BitOperand, Condition, IncDecOp, IncdecDestination, IncdecLongDestination, Instruction,
+        IoMemoryOffset, LoadDestination, LoadSource, LongDestination, LongSource, Source,
     },
     mmu::Mmu,
     registers::{Flag, LongRegister, Register, Registers},
@@ -32,10 +32,6 @@ impl Cpu {
 
             LD(destination, source) => self.load(destination, source),
             LD_long(destination, source) => self.load_long(destination, source),
-            LD_sp_hl => self.ld_sp_hl(),
-            LD_hl_sp_n(offset) => self.ld_hl_sp_n(offset),
-            LD_a_mem(addr) => self.ld_a_mem(addr),
-            LD_high(dest, src) => self.load_high(dest, src),
 
             INCDEC(destination, op) => self.incdec(destination, op),
             INCDEC_long(destination, op) => self.incdec_long(destination, op),
@@ -284,38 +280,56 @@ impl Cpu {
         self.reg.set_flag(Flag::Zero, result == 0);
     }
 
-    fn load(&mut self, dest: Destination, source: Source) {
-        let val = self.get_source_value(source);
+    fn load(&mut self, dest: LoadDestination, source: LoadSource) {
+        fn incdec_hl(cpu: &mut Cpu, op: IncDecOp) {
+            let hl_val = cpu.reg.read_long(LongRegister::HL);
 
-        match dest {
-            Destination::Register(reg) => self.reg.write(reg, val),
-            Destination::Memory(addr) => self.mem.write(addr, val),
-            Destination::MemoryAtRegister(reg) => {
-                let addr = self.reg.read_long(reg);
-                self.mem.write(addr, val);
-            }
+            let new_hl = match op {
+                IncDecOp::Inc => hl_val.wrapping_add(1),
+                IncDecOp::Dec => hl_val.wrapping_sub(1),
+            };
+
+            cpu.reg.write_long(LongRegister::HL, new_hl);
         }
-    }
 
-    fn ld_a_mem(&mut self, addr: u16) {
-        self.reg.write(Register::A, self.mem.read(addr));
-    }
-
-    fn load_high(&mut self, dest: LoadHighOperand, src: LoadHighOperand) {
-        let val = match src {
-            LoadHighOperand::MemoryAtNumber(n) => self.mem.read(0xFF00 & (n as u16)),
-            LoadHighOperand::MemoryAtC => {
-                self.mem.read(0xFF00 & (self.reg.read(Register::C) as u16))
+        let val = match source {
+            LoadSource::Immediate(x) => x,
+            LoadSource::MemoryAtRegister(reg) => self.mem.read(self.reg.read_long(reg)),
+            LoadSource::MemoryAtHl(_) => self.mem.read(self.reg.read_long(LongRegister::HL)),
+            LoadSource::Register(reg) => self.reg.read(reg),
+            LoadSource::IoMemory(IoMemoryOffset::Immediate(offset)) => {
+                self.mem.read(0xFF00 + offset as u16)
             }
-            LoadHighOperand::A => self.reg.read(Register::A),
+            LoadSource::IoMemory(IoMemoryOffset::C) => {
+                self.mem.read(0xFF00 + self.reg.read(Register::C) as u16)
+            }
+            LoadSource::MemoryAt(addr) => self.mem.read(addr),
         };
 
+        if let LoadSource::MemoryAtHl(Some(op)) = source {
+            incdec_hl(self, op);
+        }
+
         match dest {
-            LoadHighOperand::MemoryAtNumber(n) => self.mem.write(0xFF00 & (n as u16), val),
-            LoadHighOperand::MemoryAtC => self
-                .mem
-                .write(0xFF00 & (self.reg.read(Register::C) as u16), val),
-            LoadHighOperand::A => self.reg.write(Register::A, val),
+            LoadDestination::Register(reg) => self.reg.write(reg, val),
+            LoadDestination::MemoryAtHl(_) => {
+                self.mem.write(self.reg.read_long(LongRegister::HL), val);
+
+                if let LoadDestination::MemoryAtHl(Some(op)) = dest {
+                    incdec_hl(self, op);
+                }
+            }
+            LoadDestination::MemoryAt(addr) => self.mem.write(addr, val),
+            LoadDestination::MemoryAtRegister(reg) => {
+                self.mem.write(self.reg.read_long(reg), val);
+            }
+            LoadDestination::IoMemory(IoMemoryOffset::C) => {
+                self.mem
+                    .write(0xFF00 + self.reg.read(Register::C) as u16, val);
+            }
+            LoadDestination::IoMemory(IoMemoryOffset::Immediate(offset)) => {
+                self.mem.write(0xFF00 + offset as u16, val);
+            }
         }
     }
 
@@ -332,13 +346,13 @@ impl Cpu {
         }
     }
 
-    fn incdec(&mut self, dest: IncdecDestination, op: IncrementOp) {
+    fn incdec(&mut self, dest: IncdecDestination, op: IncDecOp) {
         let val = match dest {
             IncdecDestination::Register(reg) => self.reg.read(reg),
             IncdecDestination::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
         };
 
-        let result = if op == IncrementOp::Inc {
+        let result = if op == IncDecOp::Inc {
             val.wrapping_add(1)
         } else {
             val.wrapping_sub(1)
@@ -346,9 +360,9 @@ impl Cpu {
 
         self.reg.set_flag(Flag::Zero, result == 0);
         self.reg.set_flag(Flag::Zero, result == 0);
-        self.reg.set_flag(Flag::Negative, op == IncrementOp::Dec);
+        self.reg.set_flag(Flag::Negative, op == IncDecOp::Dec);
 
-        let halfcarry = if op == IncrementOp::Inc {
+        let halfcarry = if op == IncDecOp::Inc {
             val & 0x0F == 0x0F
         } else {
             val == 0
@@ -363,22 +377,22 @@ impl Cpu {
         }
     }
 
-    fn incdec_long(&mut self, dest: IncdecLongDestination, op: IncrementOp) {
+    fn incdec_long(&mut self, dest: IncdecLongDestination, op: IncDecOp) {
         let val = match dest {
             IncdecLongDestination::Register(reg) => self.reg.read_long(reg),
             IncdecLongDestination::SP => self.sp,
         };
 
-        let result = if op == IncrementOp::Inc {
+        let result = if op == IncDecOp::Inc {
             val.wrapping_add(1)
         } else {
             val.wrapping_sub(1)
         };
 
         self.reg.set_flag(Flag::Zero, result == 0);
-        self.reg.set_flag(Flag::Negative, op == IncrementOp::Dec);
+        self.reg.set_flag(Flag::Negative, op == IncDecOp::Dec);
 
-        let halfcarry = if op == IncrementOp::Inc {
+        let halfcarry = if op == IncDecOp::Inc {
             val & 0x0F == 0x0F
         } else {
             val == 0
@@ -667,94 +681,132 @@ impl Cpu {
             ),
 
             // Loads: 8 bit
-            0x02 => LD(Destination::MemoryAtRegister(BC), Source::Register(A)),
-            0x12 => LD(Destination::MemoryAtRegister(DE), Source::Register(A)),
-            0x22 => LD_incdec(
-                Destination::MemoryAtRegister(HL),
-                Source::Register(A),
-                IncrementOp::Inc,
+            0x02 => LD(
+                LoadDestination::MemoryAtRegister(BC),
+                LoadSource::Register(A),
             ),
-            0x32 => LD_incdec(
-                Destination::MemoryAtRegister(HL),
-                Source::Register(A),
-                IncrementOp::Dec,
+            0x12 => LD(
+                LoadDestination::MemoryAtRegister(DE),
+                LoadSource::Register(A),
+            ),
+            0x22 => LD(
+                LoadDestination::MemoryAtHl(Some(IncDecOp::Inc)),
+                LoadSource::Register(A),
+            ),
+            0x32 => LD(
+                LoadDestination::MemoryAtHl(Some(IncDecOp::Dec)),
+                LoadSource::Register(A),
             ),
             0x06 => LD(
-                Destination::Register(B),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(B),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x16 => LD(
-                Destination::Register(D),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(D),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x26 => LD(
-                Destination::Register(H),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(H),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x36 => LD(
-                Destination::MemoryAtRegister(HL),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::MemoryAtRegister(HL),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
-            0x0A => LD(Destination::Register(A), Source::MemoryAtRegister(BC)),
-            0x1A => LD(Destination::Register(A), Source::MemoryAtRegister(DE)),
-            0x2A => LD_incdec(
-                Destination::Register(A),
-                Source::MemoryAtRegister(HL),
-                IncrementOp::Inc,
+            0x0A => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAtRegister(BC),
             ),
-            0x3A => LD_incdec(
-                Destination::Register(A),
-                Source::MemoryAtRegister(HL),
-                IncrementOp::Dec,
+            0x1A => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAtRegister(DE),
+            ),
+            0x2A => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAtHl(Some(IncDecOp::Inc)),
+            ),
+            0x3A => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAtHl(Some(IncDecOp::Dec)),
             ),
             0x0E => LD(
-                Destination::Register(C),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(C),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x1E => LD(
-                Destination::Register(E),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(E),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x2E => LD(
-                Destination::Register(L),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(L),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
             0x3E => LD(
-                Destination::Register(A),
-                Source::Number(self.mem.read(self.pc + 1)),
+                LoadDestination::Register(A),
+                LoadSource::Immediate(self.mem.read(self.pc + 1)),
             ),
 
-            0x46 => LD(Destination::Register(B), Source::MemoryAtRegister(HL)),
-            0x4E => LD(Destination::Register(C), Source::MemoryAtRegister(HL)),
+            0x46 => LD(
+                LoadDestination::Register(B),
+                LoadSource::MemoryAtRegister(HL),
+            ),
+            0x4E => LD(
+                LoadDestination::Register(C),
+                LoadSource::MemoryAtRegister(HL),
+            ),
 
-            0x56 => LD(Destination::Register(D), Source::MemoryAtRegister(HL)),
-            0x5E => LD(Destination::Register(E), Source::MemoryAtRegister(HL)),
+            0x56 => LD(
+                LoadDestination::Register(D),
+                LoadSource::MemoryAtRegister(HL),
+            ),
+            0x5E => LD(
+                LoadDestination::Register(E),
+                LoadSource::MemoryAtRegister(HL),
+            ),
 
-            0x66 => LD(Destination::Register(H), Source::MemoryAtRegister(HL)),
-            0x6E => LD(Destination::Register(L), Source::MemoryAtRegister(HL)),
+            0x66 => LD(
+                LoadDestination::Register(H),
+                LoadSource::MemoryAtRegister(HL),
+            ),
+            0x6E => LD(
+                LoadDestination::Register(L),
+                LoadSource::MemoryAtRegister(HL),
+            ),
 
-            0x7E => LD(Destination::Register(A), Source::MemoryAtRegister(HL)),
+            0x7E => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAtRegister(HL),
+            ),
 
             0x70..=0x75 | 0x77 => LD(
-                Destination::MemoryAtRegister(HL),
-                Source::Register(get_second_reg_param(opcode).unwrap()),
+                LoadDestination::MemoryAtRegister(HL),
+                LoadSource::Register(get_second_reg_param(opcode).unwrap()),
             ),
 
             0xEA => LD(
-                Destination::Memory(self.mem.read_u16(self.pc + 1)),
-                Source::Register(A),
+                LoadDestination::MemoryAt(self.mem.read_u16(self.pc + 1)),
+                LoadSource::Register(A),
             ),
-            0xFA => LD_a_mem(self.mem.read_u16(self.pc + 1)),
-            0xE0 => LD_high(
-                LoadHighOperand::MemoryAtNumber(self.mem.read(self.pc + 1)),
-                LoadHighOperand::A,
+            0xFA => LD(
+                LoadDestination::Register(A),
+                LoadSource::MemoryAt(self.mem.read_u16(self.pc + 1)),
             ),
-            0xF0 => LD_high(
-                LoadHighOperand::A,
-                LoadHighOperand::MemoryAtNumber(self.mem.read(self.pc + 1)),
+            0xE0 => LD(
+                LoadDestination::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc + 1))),
+                LoadSource::Register(A),
             ),
-            0xE2 => LD_high(LoadHighOperand::MemoryAtC, LoadHighOperand::A),
-            0xF2 => LD_high(LoadHighOperand::A, LoadHighOperand::MemoryAtC),
+            0xF0 => LD(
+                LoadDestination::Register(A),
+                LoadSource::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc + 1))),
+            ),
+            0xE2 => LD(
+                LoadDestination::IoMemory(IoMemoryOffset::C),
+                LoadSource::Register(A),
+            ),
+            0xF2 => LD(
+                LoadDestination::Register(A),
+                LoadSource::IoMemory(IoMemoryOffset::C),
+            ),
 
             0x76 => HALT,
 
@@ -763,7 +815,7 @@ impl Cpu {
                     panic!("This opcode doesn't take two registers as params: {opcode:X}")
                 });
 
-                LD(Destination::Register(dest), Source::Register(src))
+                LD(LoadDestination::Register(dest), LoadSource::Register(src))
             }
 
             0x80..=0x87 => ADD(get_arithmetic_second_param(opcode)),
@@ -790,34 +842,34 @@ impl Cpu {
             0x39 => ADD_hl_hl,
 
             // INC/DEC: 16 bit
-            0x03 => INCDEC_long(IncdecLongDestination::Register(BC), IncrementOp::Inc),
-            0x13 => INCDEC_long(IncdecLongDestination::Register(DE), IncrementOp::Inc),
-            0x23 => INCDEC_long(IncdecLongDestination::Register(HL), IncrementOp::Inc),
-            0x33 => INCDEC_long(IncdecLongDestination::SP, IncrementOp::Inc),
+            0x03 => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Inc),
+            0x13 => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Inc),
+            0x23 => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Inc),
+            0x33 => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Inc),
 
-            0x0B => INCDEC_long(IncdecLongDestination::Register(BC), IncrementOp::Dec),
-            0x1B => INCDEC_long(IncdecLongDestination::Register(DE), IncrementOp::Dec),
-            0x2B => INCDEC_long(IncdecLongDestination::Register(HL), IncrementOp::Dec),
-            0x3B => INCDEC_long(IncdecLongDestination::SP, IncrementOp::Dec),
+            0x0B => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Dec),
+            0x1B => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Dec),
+            0x2B => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Dec),
+            0x3B => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Dec),
 
             // INC/DEC: 8 bit
-            0x04 => INCDEC(IncdecDestination::Register(B), IncrementOp::Inc),
-            0x14 => INCDEC(IncdecDestination::Register(D), IncrementOp::Inc),
-            0x24 => INCDEC(IncdecDestination::Register(H), IncrementOp::Inc),
-            0x34 => INCDEC(IncdecDestination::MemoryAtHL, IncrementOp::Inc),
-            0x0C => INCDEC(IncdecDestination::Register(C), IncrementOp::Inc),
-            0x1C => INCDEC(IncdecDestination::Register(E), IncrementOp::Inc),
-            0x2C => INCDEC(IncdecDestination::Register(L), IncrementOp::Inc),
-            0x3C => INCDEC(IncdecDestination::Register(A), IncrementOp::Inc),
+            0x04 => INCDEC(IncdecDestination::Register(B), IncDecOp::Inc),
+            0x14 => INCDEC(IncdecDestination::Register(D), IncDecOp::Inc),
+            0x24 => INCDEC(IncdecDestination::Register(H), IncDecOp::Inc),
+            0x34 => INCDEC(IncdecDestination::MemoryAtHL, IncDecOp::Inc),
+            0x0C => INCDEC(IncdecDestination::Register(C), IncDecOp::Inc),
+            0x1C => INCDEC(IncdecDestination::Register(E), IncDecOp::Inc),
+            0x2C => INCDEC(IncdecDestination::Register(L), IncDecOp::Inc),
+            0x3C => INCDEC(IncdecDestination::Register(A), IncDecOp::Inc),
 
-            0x05 => INCDEC(IncdecDestination::Register(B), IncrementOp::Dec),
-            0x15 => INCDEC(IncdecDestination::Register(D), IncrementOp::Dec),
-            0x25 => INCDEC(IncdecDestination::Register(H), IncrementOp::Dec),
-            0x35 => INCDEC(IncdecDestination::MemoryAtHL, IncrementOp::Dec),
-            0x0D => INCDEC(IncdecDestination::Register(C), IncrementOp::Dec),
-            0x1D => INCDEC(IncdecDestination::Register(E), IncrementOp::Dec),
-            0x2D => INCDEC(IncdecDestination::Register(L), IncrementOp::Dec),
-            0x3D => INCDEC(IncdecDestination::Register(A), IncrementOp::Dec),
+            0x05 => INCDEC(IncdecDestination::Register(B), IncDecOp::Dec),
+            0x15 => INCDEC(IncdecDestination::Register(D), IncDecOp::Dec),
+            0x25 => INCDEC(IncdecDestination::Register(H), IncDecOp::Dec),
+            0x35 => INCDEC(IncdecDestination::MemoryAtHL, IncDecOp::Dec),
+            0x0D => INCDEC(IncdecDestination::Register(C), IncDecOp::Dec),
+            0x1D => INCDEC(IncdecDestination::Register(E), IncDecOp::Dec),
+            0x2D => INCDEC(IncdecDestination::Register(L), IncDecOp::Dec),
+            0x3D => INCDEC(IncdecDestination::Register(A), IncDecOp::Dec),
 
             // A rotates
             0x07 => RLCA,
