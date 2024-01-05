@@ -1,6 +1,3 @@
-// TODO: This should probably also contain the parsing logic itself somehow
-// TODO: Also, these types should be private
-
 use crate::{
     instruction::{ArithmeticSource, BitOperand, LoadDestination, LoadSource},
     registers::Register,
