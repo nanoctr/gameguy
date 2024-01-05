@@ -99,10 +99,7 @@ impl Cpu {
     }
 
     fn bit(&mut self, bit: u8, operand: BitOperand) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let masked = val & (1 << bit);
 
@@ -112,68 +109,58 @@ impl Cpu {
     }
 
     fn res(&mut self, bit: u8, operand: BitOperand) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let bitmask = !(1 << bit);
         let result = val & bitmask;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
     }
 
     fn set(&mut self, bit: u8, operand: BitOperand) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let result = val | (1 << bit);
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
     }
 
     fn swap(&mut self, operand: BitOperand) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let low_nibble = (val & 0x0F) << 4;
         let high_nibble = (val & 0xF0) >> 4;
         let result = high_nibble | low_nibble;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative, Flag::Carry], false);
         self.reg.set_flag(Flag::Zero, result == 0);
     }
 
-    fn shift_right_arithmetic(&mut self, operand: BitOperand) {
-        let val = match operand {
+    fn read_bit_operand(&self, op: BitOperand) -> u8 {
+        match op {
             BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
             BitOperand::Register(reg) => self.reg.read(reg),
+        }
+    }
+
+    fn write_bit_operand(&mut self, op: BitOperand, val: u8) {
+        match op {
+            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), val),
+            BitOperand::Register(reg) => self.reg.write(reg, val),
         };
+    }
+
+    fn shift_right_arithmetic(&mut self, operand: BitOperand) {
+        let val = self.read_bit_operand(operand);
 
         let carry_bit = val & 1;
         let high_bit = val & 0b1000_0000;
         let result = (val >> 1) | high_bit;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative], false);
@@ -182,10 +169,7 @@ impl Cpu {
     }
 
     fn shift_right(&mut self, operand: BitOperand, through_carry: bool) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let mut carry_bit = val & 1;
         if through_carry && self.reg.get_flag(Flag::Carry) {
@@ -194,10 +178,7 @@ impl Cpu {
 
         let result = val >> 1;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative], false);
@@ -206,10 +187,7 @@ impl Cpu {
     }
 
     fn shift_left(&mut self, operand: BitOperand, through_carry: bool) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let mut carry_bit = (val & 0b1000_0000) >> 7;
         if through_carry && self.reg.get_flag(Flag::Carry) {
@@ -218,10 +196,7 @@ impl Cpu {
 
         let result = val << 1;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative], false);
@@ -230,10 +205,7 @@ impl Cpu {
     }
 
     fn rotate_right(&mut self, operand: BitOperand, include_carry: bool) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let mut carry_bit = val & 1;
         if include_carry && self.reg.get_flag(Flag::Carry) {
@@ -242,10 +214,7 @@ impl Cpu {
 
         let result = (val >> 1) | (carry_bit << 7);
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative], false);
@@ -254,10 +223,7 @@ impl Cpu {
     }
 
     fn rotate_left(&mut self, operand: BitOperand, include_carry: bool) {
-        let val = match operand {
-            BitOperand::MemoryAtHL => self.mem.read(self.reg.read_long(LongRegister::HL)),
-            BitOperand::Register(reg) => self.reg.read(reg),
-        };
+        let val = self.read_bit_operand(operand);
 
         let mut carry_bit = (val & 0b1000_0000) >> 7;
         if include_carry && self.reg.get_flag(Flag::Carry) {
@@ -266,10 +232,7 @@ impl Cpu {
 
         let result = (val << 1) | carry_bit;
 
-        match operand {
-            BitOperand::MemoryAtHL => self.mem.write(self.reg.read_long(LongRegister::HL), result),
-            BitOperand::Register(reg) => self.reg.write(reg, result),
-        };
+        self.write_bit_operand(operand, result);
 
         self.reg
             .set_flags(&[Flag::HalfCarry, Flag::Negative], false);
@@ -896,15 +859,6 @@ impl Cpu {
             0xF0..=0xF7 => SET(6, param),
             0xF8..=0xFF => SET(7, param),
         })
-    }
-
-    fn ld_sp_hl(&mut self) {
-        self.sp = self.reg.read_long(LongRegister::HL);
-    }
-
-    fn ld_hl_sp_n(&mut self, offset: u8) {
-        let val = self.mem.read_u16(self.sp + offset as u16);
-        self.reg.write_long(LongRegister::HL, val);
     }
 
     fn cpl(&mut self) {
