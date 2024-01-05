@@ -28,14 +28,12 @@ impl Cpu {
         use Instruction::*;
 
         match instr {
-            NOP => {}
+            NOP => todo!(),
             STOP => todo!(),
+            HALT => todo!(),
 
             LD(destination, source) => self.load(destination, source),
             LD_long(destination, source) => self.load_long(destination, source),
-
-            INCDEC(destination, op) => self.incdec(destination, op),
-            INCDEC_long(destination, op) => self.incdec_long(destination, op),
 
             ADD(src) => self.add(src, false),
             ADC(src) => self.add(src, true),
@@ -49,33 +47,16 @@ impl Cpu {
             CP(src) => self.cp(src),
 
             ADD_hl(src) => self.add_hl(src),
-            ADD_hl_hl => self.add_hl_hl(),
+            ADD_hl_sp => self.add_hl_sp(),
 
-            JP(cond, addr) => self.jump(cond, addr),
-            JP_hl => {
-                self.pc = self.reg.read_long(LongRegister::HL);
-            }
-            JR(cond, offset) => self.relative_jump(cond, offset),
+            INCDEC(destination, op) => self.incdec(destination, op),
+            INCDEC_long(destination, op) => self.incdec_long(destination, op),
 
-            RLA => self.rla(),
             RLCA => self.rlca(),
-            RRA => self.rra(),
+            RLA => self.rla(),
             RRCA => self.rrca(),
+            RRA => self.rra(),
 
-            CPL => self.cpl(),
-
-            CCF => self.ccf(),
-            SCF => self.scf(),
-
-            PUSH(reg) => self.push(reg),
-            POP(reg) => self.pop(reg),
-
-            RST(offset) => self.call(None, offset as u16),
-            CALL(cond, addr) => self.call(cond, addr),
-
-            RET(cond) => self.ret(cond),
-
-            // bit operations
             RLC(operand) => self.rotate_left(operand, false),
             RRC(operand) => self.rotate_right(operand, false),
             RL(operand) => self.rotate_left(operand, true),
@@ -89,10 +70,25 @@ impl Cpu {
             RES(bit, operand) => self.res(bit, operand),
             SET(bit, operand) => self.set(bit, operand),
 
+            JP(cond, addr) => self.jump(cond, addr),
+            JP_hl => {
+                self.pc = self.reg.read_long(LongRegister::HL);
+            }
+            JR(cond, offset) => self.relative_jump(cond, offset),
+
+            RST(offset) => self.call(None, offset as u16),
+            CALL(cond, addr) => self.call(cond, addr),
+            RET(cond) => self.ret(cond),
+
             EI => self.interrupts_enabled = true,
             DI => self.interrupts_enabled = false,
 
-            x => return Err(format!("Instruction not implemented: {x:?}")),
+            PUSH(reg) => self.push(reg),
+            POP(reg) => self.pop(reg),
+
+            CPL => self.cpl(),
+            SCF => self.scf(),
+            CCF => self.ccf(),
         }
 
         instr.cycles()
@@ -260,6 +256,7 @@ impl Cpu {
             LoadSource::IoMemory(IoMemoryOffset::Immediate(offset)) => {
                 self.mem.read(0xFF00 + offset as u16)
             }
+
             LoadSource::IoMemory(IoMemoryOffset::C) => {
                 self.mem.read(0xFF00 + self.reg.read(Register::C) as u16)
             }
@@ -495,7 +492,7 @@ impl Cpu {
     }
 
     // TODO: Recombine this with add_hl, add SP to LongRegister::
-    fn add_hl_hl(&mut self) {
+    fn add_hl_sp(&mut self) {
         let val = self.sp;
 
         let (result, overflow) = self.reg.read_long(LongRegister::HL).overflowing_add(val);
@@ -597,29 +594,79 @@ impl Cpu {
             0xD9 => unimplemented!("RETI"),
             0x27 => unimplemented!("DAA"),
 
-            0x2F => CPL,
-            0x37 => SCF,
-            0x3F => CCF,
-            0xC1 => POP(BC),
-            0xD1 => POP(DE),
-            0xE1 => POP(HL),
-            0xF1 => POP(AF),
             0x00 => NOP,
             0x10 => STOP,
+            0x76 => HALT,
 
-            0x18 => JR(None, self.mem.read(self.pc) as i8),
-            0x28 => JR(Some(Condition::Zero), self.mem.read(self.pc) as i8),
-            0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc) as i8),
-            0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc) as i8),
-            0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc) as i8),
+            // 8bit loads
+            0x02 => LD(LdDst::MemoryAtRegister(BC), LdSrc::Register(A)),
+            0x12 => LD(LdDst::MemoryAtRegister(DE), LdSrc::Register(A)),
+            0x22 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Inc)), LdSrc::Register(A)),
+            0x32 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Dec)), LdSrc::Register(A)),
 
-            0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc)),
-            0xD2 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc)),
+            0x06 => LD(LdDst::Register(B), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x16 => LD(LdDst::Register(D), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x26 => LD(LdDst::Register(H), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x36 => LD(
+                LdDst::MemoryAtRegister(HL),
+                LdSrc::Immediate(self.mem.read(self.pc)),
+            ),
 
-            0xCA => JP(Some(Condition::Zero), self.mem.read_u16(self.pc)),
-            0xDA => JP(Some(Condition::Carry), self.mem.read_u16(self.pc)),
+            0x0A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(BC)),
+            0x1A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(DE)),
+            0x2A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Inc))),
+            0x3A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Dec))),
 
-            // Loads: 16 bit
+            0x0E => LD(LdDst::Register(C), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x1E => LD(LdDst::Register(E), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x2E => LD(LdDst::Register(L), LdSrc::Immediate(self.mem.read(self.pc))),
+            0x3E => LD(LdDst::Register(A), LdSrc::Immediate(self.mem.read(self.pc))),
+
+            // TODO: Combine these with the ones below;
+            // get_reg_param would have to return a source/dest instead of Register
+            // maybe implement from/into for specific param types
+            0x46 => LD(LdDst::Register(B), LdSrc::MemoryAtRegister(HL)),
+            0x4E => LD(LdDst::Register(C), LdSrc::MemoryAtRegister(HL)),
+            0x56 => LD(LdDst::Register(D), LdSrc::MemoryAtRegister(HL)),
+            0x5E => LD(LdDst::Register(E), LdSrc::MemoryAtRegister(HL)),
+            0x66 => LD(LdDst::Register(H), LdSrc::MemoryAtRegister(HL)),
+            0x6E => LD(LdDst::Register(L), LdSrc::MemoryAtRegister(HL)),
+            0x7E => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(HL)),
+
+            0x70..=0x75 | 0x77 => LD(
+                LdDst::MemoryAtRegister(HL),
+                LdSrc::Register(get_second_reg_param(opcode)),
+            ),
+
+            0x40..=0x7F => {
+                let (dest, src) = get_reg_params(opcode).unwrap_or_else(|| {
+                    panic!("This opcode doesn't take two registers as params: {opcode:X}")
+                });
+
+                LD(LdDst::Register(dest), LdSrc::Register(src))
+            }
+
+            0xE0 => LD(
+                LdDst::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
+                LdSrc::Register(A),
+            ),
+            0xF0 => LD(
+                LdDst::Register(A),
+                LdSrc::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
+            ),
+            0xE2 => LD(LdDst::IoMemory(IoMemoryOffset::C), LdSrc::Register(A)),
+            0xF2 => LD(LdDst::Register(A), LdSrc::IoMemory(IoMemoryOffset::C)),
+
+            0xEA => LD(
+                LdDst::MemoryAt(self.mem.read_u16(self.pc)),
+                LdSrc::Register(A),
+            ),
+            0xFA => LD(
+                LdDst::Register(A),
+                LdSrc::MemoryAt(self.mem.read_u16(self.pc)),
+            ),
+
+            // 16bit loads
             0x01 => LD_long(
                 LdLongDest::Register(BC),
                 LdLongSrc::Immediate(self.mem.read_u16(self.pc)),
@@ -650,72 +697,7 @@ impl Cpu {
                 LdLongSrc::Immediate(self.mem.read(self.pc) as u16),
             ),
 
-            // Loads: 8 bit
-            0x02 => LD(LdDst::MemoryAtRegister(BC), LdSrc::Register(A)),
-            0x12 => LD(LdDst::MemoryAtRegister(DE), LdSrc::Register(A)),
-            0x22 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Inc)), LdSrc::Register(A)),
-            0x32 => LD(LdDst::MemoryAtHl(Some(IncDecOp::Dec)), LdSrc::Register(A)),
-            0x06 => LD(LdDst::Register(B), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x16 => LD(LdDst::Register(D), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x26 => LD(LdDst::Register(H), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x36 => LD(
-                LdDst::MemoryAtRegister(HL),
-                LdSrc::Immediate(self.mem.read(self.pc)),
-            ),
-            0x0A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(BC)),
-            0x1A => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(DE)),
-            0x2A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Inc))),
-            0x3A => LD(LdDst::Register(A), LdSrc::MemoryAtHl(Some(IncDecOp::Dec))),
-            0x0E => LD(LdDst::Register(C), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x1E => LD(LdDst::Register(E), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x2E => LD(LdDst::Register(L), LdSrc::Immediate(self.mem.read(self.pc))),
-            0x3E => LD(LdDst::Register(A), LdSrc::Immediate(self.mem.read(self.pc))),
-
-            0x46 => LD(LdDst::Register(B), LdSrc::MemoryAtRegister(HL)),
-            0x4E => LD(LdDst::Register(C), LdSrc::MemoryAtRegister(HL)),
-
-            0x56 => LD(LdDst::Register(D), LdSrc::MemoryAtRegister(HL)),
-            0x5E => LD(LdDst::Register(E), LdSrc::MemoryAtRegister(HL)),
-
-            0x66 => LD(LdDst::Register(H), LdSrc::MemoryAtRegister(HL)),
-            0x6E => LD(LdDst::Register(L), LdSrc::MemoryAtRegister(HL)),
-
-            0x7E => LD(LdDst::Register(A), LdSrc::MemoryAtRegister(HL)),
-
-            0x70..=0x75 | 0x77 => LD(
-                LdDst::MemoryAtRegister(HL),
-                LdSrc::Register(get_second_reg_param(opcode)),
-            ),
-
-            0xEA => LD(
-                LdDst::MemoryAt(self.mem.read_u16(self.pc)),
-                LdSrc::Register(A),
-            ),
-            0xFA => LD(
-                LdDst::Register(A),
-                LdSrc::MemoryAt(self.mem.read_u16(self.pc)),
-            ),
-            0xE0 => LD(
-                LdDst::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
-                LdSrc::Register(A),
-            ),
-            0xF0 => LD(
-                LdDst::Register(A),
-                LdSrc::IoMemory(IoMemoryOffset::Immediate(self.mem.read(self.pc))),
-            ),
-            0xE2 => LD(LdDst::IoMemory(IoMemoryOffset::C), LdSrc::Register(A)),
-            0xF2 => LD(LdDst::Register(A), LdSrc::IoMemory(IoMemoryOffset::C)),
-
-            0x76 => HALT,
-
-            0x40..=0x7F => {
-                let (dest, src) = get_reg_params(opcode).unwrap_or_else(|| {
-                    panic!("This opcode doesn't take two registers as params: {opcode:X}")
-                });
-
-                LD(LdDst::Register(dest), LdSrc::Register(src))
-            }
-
+            // arithmetic operations
             0x80..=0x87 => ADD(get_arithmetic_second_param(opcode)),
             0x88..=0x8F => ADC(get_arithmetic_second_param(opcode)),
             0x90..=0x97 => SUB(get_arithmetic_second_param(opcode)),
@@ -737,18 +719,7 @@ impl Cpu {
             0x09 => ADD_hl(BC),
             0x19 => ADD_hl(DE),
             0x29 => ADD_hl(HL),
-            0x39 => ADD_hl_hl,
-
-            // INC/DEC: 16 bit
-            0x03 => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Inc),
-            0x13 => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Inc),
-            0x23 => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Inc),
-            0x33 => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Inc),
-
-            0x0B => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Dec),
-            0x1B => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Dec),
-            0x2B => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Dec),
-            0x3B => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Dec),
+            0x39 => ADD_hl_sp,
 
             // INC/DEC: 8 bit
             0x04 => INCDEC(IncdecDestination::Register(B), IncDecOp::Inc),
@@ -769,20 +740,37 @@ impl Cpu {
             0x2D => INCDEC(IncdecDestination::Register(L), IncDecOp::Dec),
             0x3D => INCDEC(IncdecDestination::Register(A), IncDecOp::Dec),
 
-            // A rotates
+            // INC/DEC: 16 bit
+            0x03 => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Inc),
+            0x13 => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Inc),
+            0x23 => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Inc),
+            0x33 => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Inc),
+
+            0x0B => INCDEC_long(IncdecLongDestination::Register(BC), IncDecOp::Dec),
+            0x1B => INCDEC_long(IncdecLongDestination::Register(DE), IncDecOp::Dec),
+            0x2B => INCDEC_long(IncdecLongDestination::Register(HL), IncDecOp::Dec),
+            0x3B => INCDEC_long(IncdecLongDestination::SP, IncDecOp::Dec),
+
+            // bit operations
             0x07 => RLCA,
             0x17 => RLA,
             0x0F => RRCA,
             0x1F => RRA,
-
-            0xC5 => PUSH(BC),
-            0xD5 => PUSH(DE),
-            0xE5 => PUSH(HL),
-            0xF5 => PUSH(AF),
+            0xCB => self.parse_bit_instr()?,
 
             // Jumps
+            0xC2 => JP(Some(Condition::NotZero), self.mem.read_u16(self.pc)),
+            0xD2 => JP(Some(Condition::NotCarry), self.mem.read_u16(self.pc)),
+            0xCA => JP(Some(Condition::Zero), self.mem.read_u16(self.pc)),
+            0xDA => JP(Some(Condition::Carry), self.mem.read_u16(self.pc)),
             0xC3 => JP(None, self.mem.read_u16(self.pc)),
             0xE9 => JP_hl,
+
+            0x18 => JR(None, self.mem.read(self.pc) as i8),
+            0x28 => JR(Some(Condition::Zero), self.mem.read(self.pc) as i8),
+            0x38 => JR(Some(Condition::Carry), self.mem.read(self.pc) as i8),
+            0x20 => JR(Some(Condition::NotZero), self.mem.read(self.pc) as i8),
+            0x30 => JR(Some(Condition::NotCarry), self.mem.read(self.pc) as i8),
 
             0xC7 => RST(0),
             0xD7 => RST(0x10),
@@ -805,10 +793,24 @@ impl Cpu {
             0xC8 => RET(Some(Condition::Zero)),
             0xD8 => RET(Some(Condition::Carry)),
 
+            // interrupts
             0xF3 => DI,
             0xFB => EI,
 
-            0xCB => self.parse_bit_instr()?,
+            // misc
+            0xC5 => PUSH(BC),
+            0xD5 => PUSH(DE),
+            0xE5 => PUSH(HL),
+            0xF5 => PUSH(AF),
+
+            0xC1 => POP(BC),
+            0xD1 => POP(DE),
+            0xE1 => POP(HL),
+            0xF1 => POP(AF),
+
+            0x2F => CPL,
+            0x37 => SCF,
+            0x3F => CCF,
 
             0xD3 | 0xE3 | 0xE4 | 0xF4 | 0xDB | 0xEB | 0xEC | 0xFC | 0xDD | 0xED | 0xFD => {
                 panic!("Unused opcode, what do?");

@@ -83,14 +83,15 @@ pub enum BitOperand {
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
+    NOP,
+    STOP,
+    HALT,
+
     // loads
     LD(LoadDestination, LoadSource),
     LD_long(LoadLongDestination, LoadLongSource),
 
     // arithmetic operations
-    INCDEC(IncdecDestination, IncDecOp),
-    INCDEC_long(IncdecLongDestination, IncDecOp),
-
     ADD(ArithmeticSource),
     ADC(ArithmeticSource),
     SUB(ArithmeticSource),
@@ -101,19 +102,10 @@ pub enum Instruction {
     CP(ArithmeticSource),
 
     ADD_hl(LongRegister),
-    ADD_hl_hl,
+    ADD_hl_sp,
 
-    PUSH(LongRegister),
-    POP(LongRegister),
-
-    // jumps and calls
-    JP(Option<Condition>, u16),
-    JP_hl,
-    JR(Option<Condition>, i8),
-
-    RST(u8),
-    CALL(Option<Condition>, u16),
-    RET(Option<Condition>),
+    INCDEC(IncdecDestination, IncDecOp),
+    INCDEC_long(IncdecLongDestination, IncDecOp),
 
     // Bit operations
     RLCA,
@@ -134,18 +126,26 @@ pub enum Instruction {
     RES(u8, BitOperand),
     SET(u8, BitOperand),
 
+    // jumps and calls
+    JP(Option<Condition>, u16),
+    JP_hl,
+    JR(Option<Condition>, i8),
+
+    RST(u8),
+    CALL(Option<Condition>, u16),
+    RET(Option<Condition>),
+
     // interrupts
     EI,
     DI,
 
     // misc
-    NOP,
-    STOP,
-    HALT,
+    PUSH(LongRegister),
+    POP(LongRegister),
 
     CPL,
-    CCF,
     SCF,
+    CCF,
 }
 
 impl Instruction {
