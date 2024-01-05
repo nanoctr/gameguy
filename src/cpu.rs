@@ -1,7 +1,7 @@
 use crate::{
     instruction::{
         BitOperand, Condition, IncDecOp, IncdecDestination, IncdecLongDestination, Instruction,
-        IoMemoryOffset, LoadDestination, LoadSource, LongDestination, LongSource, Source,
+        IoMemoryOffset, LoadDestination, LoadLongDestination, LoadLongSource, LoadSource, Source,
     },
     mmu::Mmu,
     registers::{Flag, LongRegister, Register, Registers},
@@ -333,17 +333,19 @@ impl Cpu {
         }
     }
 
-    fn load_long(&mut self, dest: LongDestination, source: LongSource) {
+    fn load_long(&mut self, dest: LoadLongDestination, source: LoadLongSource) {
         let val = match source {
-            LongSource::Number(immediate) => immediate,
-            LongSource::SP => self.sp,
+            LoadLongSource::Immediate(x) => x,
+            LoadLongSource::SP => self.sp,
+            LoadLongSource::SP_Offset(offset) => self.sp.wrapping_add_signed(offset as i16),
+            LoadLongSource::HL => self.reg.read_long(LongRegister::HL),
         };
 
         match dest {
-            LongDestination::Register(reg) => self.reg.write_long(reg, val),
-            LongDestination::Memory(addr) => self.mem.write_u16(addr, val),
-            LongDestination::SP => self.sp = val,
-        }
+            LoadLongDestination::Register(reg) => self.reg.write_long(reg, val),
+            LoadLongDestination::SP => self.sp = val,
+            LoadLongDestination::MemoryAt(addr) => self.mem.write_u16(addr, val),
+        };
     }
 
     fn incdec(&mut self, dest: IncdecDestination, op: IncDecOp) {
@@ -654,30 +656,33 @@ impl Cpu {
 
             // Loads: 16 bit
             0x01 => LD_long(
-                LongDestination::Register(BC),
-                LongSource::Number(self.mem.read_u16(self.pc + 1)),
+                LoadLongDestination::Register(BC),
+                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
             ),
             0x11 => LD_long(
-                LongDestination::Register(DE),
-                LongSource::Number(self.mem.read_u16(self.pc + 1)),
+                LoadLongDestination::Register(DE),
+                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
             ),
             0x21 => LD_long(
-                LongDestination::Register(HL),
-                LongSource::Number(self.mem.read_u16(self.pc + 1)),
+                LoadLongDestination::Register(HL),
+                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
             ),
             0x31 => LD_long(
-                LongDestination::SP,
-                LongSource::Number(self.mem.read_u16(self.pc + 1)),
+                LoadLongDestination::SP,
+                LoadLongSource::Immediate(self.mem.read_u16(self.pc + 1)),
             ),
             0x08 => LD_long(
-                LongDestination::Memory(self.mem.read_u16(self.pc + 1)),
-                LongSource::SP,
+                LoadLongDestination::MemoryAt(self.mem.read_u16(self.pc + 1)),
+                LoadLongSource::SP,
             ),
-            0xF8 => LD_hl_sp_n(self.mem.read(self.pc + 1)),
-            0xF9 => LD_sp_hl,
+            0xF8 => LD_long(
+                LoadLongDestination::Register(HL),
+                LoadLongSource::SP_Offset(self.mem.read(self.pc + 1) as i8),
+            ),
+            0xF9 => LD_long(LoadLongDestination::SP, LoadLongSource::HL),
             0xE8 => LD_long(
-                LongDestination::SP,
-                LongSource::Number(self.mem.read(self.pc + 1) as u16),
+                LoadLongDestination::SP,
+                LoadLongSource::Immediate(self.mem.read(self.pc + 1) as u16),
             ),
 
             // Loads: 8 bit

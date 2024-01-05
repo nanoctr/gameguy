@@ -8,26 +8,6 @@ pub enum Source {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Destination {
-    Register(Register),
-    Memory(u16),
-    MemoryAtRegister(LongRegister),
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum LongSource {
-    Number(u16),
-    SP,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum LongDestination {
-    Register(LongRegister),
-    Memory(u16),
-    SP,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum IncdecDestination {
     Register(Register),
     MemoryAtHL,
@@ -43,13 +23,6 @@ pub enum IncdecLongDestination {
 pub enum IncDecOp {
     Inc,
     Dec,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum LoadHighOperand {
-    MemoryAtNumber(u8),
-    MemoryAtC,
-    A,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -85,6 +58,22 @@ pub enum LoadSource {
     IoMemory(IoMemoryOffset),
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LoadLongDestination {
+    Register(LongRegister),
+    SP,
+    MemoryAt(u16),
+}
+
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LoadLongSource {
+    Immediate(u16),
+    SP,
+    SP_Offset(i8),
+    HL,
+}
+
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
@@ -93,9 +82,7 @@ pub enum Instruction {
     HALT,
 
     LD(LoadDestination, LoadSource),
-    LD_long(LongDestination, LongSource),
-    LD_hl_sp_n(u8),
-    LD_sp_hl,
+    LD_long(LoadLongDestination, LoadLongSource),
 
     INCDEC(IncdecDestination, IncDecOp),
     INCDEC_long(IncdecLongDestination, IncDecOp),
