@@ -89,6 +89,10 @@ impl Cpu {
             CPL => self.cpl(),
             SCF => self.scf(),
             CCF => self.ccf(),
+        };
+
+        if let Some(inc) = pc_incr(instr) {
+            self.pc += inc;
         }
     }
 
@@ -591,5 +595,57 @@ impl Cpu {
             BitOperand::MemoryAtHl => self.mem.write(self.reg.read_long(LongRegister::HL), val),
             BitOperand::Register(reg) => self.reg.write(reg, val),
         };
+    }
+}
+
+fn pc_incr(instr: &Instruction) -> Option<u16> {
+    use Instruction::*;
+
+    match instr {
+        NOP => Some(1),
+        STOP => None,
+        HALT => None,
+        LD(_, _) => Some(1),
+        LD_long(_, _) => Some(2),
+        ADD(_) => Some(1),
+        ADC(_) => Some(1),
+        SUB(_) => Some(1),
+        SBC(_) => Some(1),
+        AND(_) => Some(1),
+        XOR(_) => Some(1),
+        OR(_) => Some(1),
+        CP(_) => Some(1),
+        ADD_hl(_) => Some(1),
+        ADD_hl_sp => Some(1),
+        INCDEC(_, _) => Some(1),
+        INCDEC_long(_, _) => Some(1),
+        RLCA => Some(1),
+        RLA => Some(2),
+        RRCA => Some(1),
+        RRA => Some(2),
+        RLC(_) => Some(2),
+        RRC(_) => Some(2),
+        RL(_) => Some(2),
+        RR(_) => Some(2),
+        SLA(_) => Some(2),
+        SRA(_) => Some(2),
+        SWAP(_) => Some(2),
+        SRL(_) => Some(2),
+        BIT(_, _) => Some(2),
+        RES(_, _) => Some(2),
+        SET(_, _) => Some(2),
+        JP(_, _) => None,
+        JP_hl => None,
+        JR(_, _) => None,
+        RST(_) => None,
+        CALL(_, _) => None,
+        RET(_) => None,
+        EI => Some(1),
+        DI => Some(1),
+        PUSH(_) => Some(1),
+        POP(_) => Some(1),
+        CPL => Some(1),
+        SCF => Some(1),
+        CCF => Some(1),
     }
 }
